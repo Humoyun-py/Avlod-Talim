@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Databases and uploaded files
+*.sqlite3
+private_media/
+frontend/apps/admin/server_db.json
+
+# Generated editor artifacts
+**/.aistudio/artifacts/brain/
+
+# Node / Vite build output
+node_modules/
+dist/
+build/
+coverage/
+
+# Local editor and log files
+.DS_Store
+*.log

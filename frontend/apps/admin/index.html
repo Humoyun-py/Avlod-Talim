@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // Safe WebSocket interceptor for Vite HMR in sandbox environment where HMR is disabled
+      (function() {
+        window.addEventListener('unhandledrejection', function(event) {
+          if (event.reason && (
+            event.reason.message === 'WebSocket closed without opened.' ||
+            String(event.reason).includes('WebSocket') ||
+            String(event.reason?.stack).includes('createWebSocketModuleRunnerTransport') ||
+            String(event.reason?.stack).includes('@vite/client')
+          )) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        window.addEventListener('error', function(event) {
+          if (
+            (event.message && (event.message.includes('WebSocket') || event.message.includes('createWebSocketModuleRunnerTransport'))) ||
+            (event.filename && event.filename.includes('@vite/client'))
+          ) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+
+        const NativeWebSocket = window.WebSocket;
+        if (NativeWebSocket) {
+          window.WebSocket = function(url, protocols) {
+            if (protocols === 'vite-hmr' || (Array.isArray(protocols) && protocols.includes('vite-hmr')) || (typeof url === 'string' && url.includes('token='))) {
+              const target = new EventTarget();
+              return {
+                readyState: 1, // OPEN
+                OPEN: 1,
+                CONNECTING: 0,
+                CLOSING: 2,
+                CLOSED: 3,
+                send: function() {},
+                close: function() {},
+                addEventListener: function(type, listener, options) {
+                  target.addEventListener(type, listener, options);
+                  if (type === 'open') {
+                    setTimeout(() => target.dispatchEvent(new Event('open')), 0);
+                  }
+                },
+                removeEventListener: function(type, listener, options) {
+                  target.removeEventListener(type, listener, options);
+                },
+                dispatchEvent: function(event) {
+                  return target.dispatchEvent(event);
+                }
+              };
+            }
+            return new NativeWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = NativeWebSocket.prototype;
+          window.WebSocket.OPEN = NativeWebSocket.OPEN;
+          window.WebSocket.CONNECTING = NativeWebSocket.CONNECTING;
+          window.WebSocket.CLOSING = NativeWebSocket.CLOSING;
+          window.WebSocket.CLOSED = NativeWebSocket.CLOSED;
+        }
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Avlod Ta'lim - Education Management System</title>
+    <meta name="description" content="Comprehensive enterprise education management system with professional Admin panel, student tracking, course and group enrollment, payments, shop, and notifications." />
+    <meta property="og:title" content="Avlod Ta'lim - Education Management System" />
+    <meta property="og:description" content="Comprehensive enterprise education management system with professional Admin panel, student tracking, course and group enrollment, payments, shop, and notifications." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

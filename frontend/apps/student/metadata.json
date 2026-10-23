@@ -1,0 +1,6 @@
+{
+  "name": "Avlod Ta'lim — Student Panel",
+  "description": "Professional student management portal for Avlod Ta'lim: personalized dashboard, coin rewards, coin shop, attendance tracking, lesson schedule, homework, and academic progress.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

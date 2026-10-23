@@ -1,0 +1,15 @@
+{
+  "name": "avlod-talim-frontend-workspace",
+  "private": true,
+  "workspaces": ["apps/student", "apps/admin", "apps/director", "apps/teacher"],
+  "scripts": {
+    "dev:student": "npm --prefix apps/student run dev",
+    "dev:admin": "npm --prefix apps/admin run dev",
+    "dev:director": "npm --prefix apps/director run dev",
+    "dev:teacher": "npm --prefix apps/teacher run dev",
+    "build:student": "npm --prefix apps/student run build",
+    "build:admin": "npm --prefix apps/admin run build",
+    "build:director": "npm --prefix apps/director run build",
+    "build:teacher": "npm --prefix apps/teacher run build"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Avlod Ta'lim - Director Panel",
+  "description": "Avlod Ta'lim Education Management System - Director Panel for managing teachers, students, groups, finances, salaries, and academy operations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

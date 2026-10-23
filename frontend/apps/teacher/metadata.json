@@ -1,0 +1,6 @@
+{
+  "name": "Avlod Ta’lim — Teacher Panel",
+  "description": "Official Teacher Management Panel for Avlod Ta'lim Education Management System. Manage assigned groups, lesson schedules, student attendance, homework, lesson completion, and academic reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --brand-primary: #5C42FD;
+    --brand-bg: #F8F8FC;
+    --brand-card: #FFFFFF;
+    --brand-text: #1E1B39;
+    --brand-border: #E9EAF3;
+  }
+
+  body {
+    background-color: #F8F8FC;
+    color: #1E1B39;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Make all inputs, selects, and textareas have crisp black text for readability */
+  input, select, textarea {
+    color: #0f172a !important;
+  }
+  input::placeholder, textarea::placeholder {
+    color: #64748b !important;
+  }
+  input:focus, select:focus, textarea:focus {
+    color: #000000 !important;
+  }
+
+  /* Custom Clean Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #D8D9E8;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #B6B8D3;
+  }
+}
+
+/* Page to page table transition micro-animations */
+@keyframes pageSlideFade {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.998);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-page-transition {
+  animation: pageSlideFade 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes tableRowEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-table-row {
+  animation: tableRowEnter 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
