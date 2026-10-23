@@ -5,6 +5,7 @@ import os
 
 from dotenv import load_dotenv
 from django.core.exceptions import ImproperlyConfigured
+from datetime import timedelta
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
@@ -25,13 +26,16 @@ def env_list(name, default=""):
 
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "").strip()
+SECRET_KEY = os.getenv("SECRET_KEY", os.getenv("DJANGO_SECRET_KEY", "")).strip()
 if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set")
 if not DEBUG and (len(SECRET_KEY) < 50 or SECRET_KEY.lower() in {"replace-me", "changeme", "secret"}):
     raise ImproperlyConfigured("Production DJANGO_SECRET_KEY must be a unique value of at least 50 characters")
 
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1" if DEBUG else "")
+render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+if render_hostname:
+    ALLOWED_HOSTS = list(dict.fromkeys([*ALLOWED_HOSTS, render_hostname]))
 if not DEBUG and (not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS):
     raise ImproperlyConfigured("Set DJANGO_ALLOWED_HOSTS to explicit production hostnames")
 
@@ -52,6 +56,8 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+if not DEBUG:
+    MIDDLEWARE.insert(1, "whitenoise.middleware.WhiteNoiseMiddleware")
 
 ROOT_URLCONF = "config.urls"
 TEMPLATES = [{
@@ -112,9 +118,11 @@ TIME_ZONE = "Asia/Tashkent"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-MEDIA_URL = "media/"
+if not DEBUG:
+    STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "private_media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -129,8 +137,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {"anon": "60/minute", "user": "300/minute", "login": "8/minute"},
 }
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": __import__("datetime").timedelta(minutes=15),
-    "REFRESH_TOKEN_LIFETIME": __import__("datetime").timedelta(days=1),
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),

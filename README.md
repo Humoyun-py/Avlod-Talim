@@ -138,6 +138,6 @@ Shu sabab muvaffaqiyatli login yoki build barcha bo'limlar production'da ishlash
 
 ## Production deploy
 
-Ubuntu, PostgreSQL, Gunicorn, Nginx, HTTPS, systemd timer va DB/media backup bo'yicha deploy qo'llanma [DEPLOYMENT.md](DEPLOYMENT.md) faylida. Repo'da systemd/Nginx namunalari `deployment/` ichida. Haqiqiy domen va server ma'lumotlari bilan sozlash shart; serverga deploy avtomatik bajarilmaydi.
+Render uchun deploy bo'yicha yo'riqnoma [DEPLOYMENT.md](DEPLOYMENT.md), Blueprint esa [render.yaml](render.yaml) faylida. Ubuntu/VPS uchun systemd va Nginx namunalar [deployment/](deployment/) ichida. Haqiqiy domen va credentiallar bilan Render Dashboard'da sozlash kerak; serverga deploy hali bajarilmagan.
 
-Productionda PostgreSQL, `DEBUG=false`, serverga xos kuchli `DJANGO_SECRET_KEY`, aniq host/CORS/CSRF domenlari talab qilinadi. `backend/.env` va barcha credentiallar Git'dan tashqarida qolishi kerak. Private chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpointi hali yo'q; Nginx ularni public qilmaydi. Backend va frontend integratsiyasidagi cheklovlarni yuqorida ko'ring.
+Productionda PostgreSQL, `DEBUG=false`, serverga xos kuchli secret key va aniq host/CORS/CSRF domenlari talab qilinadi. `backend/.env` va barcha credentiallar Git'dan tashqarida qolishi kerak. Private chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpointi hali yo'q; fayllarni ommaga ochmang. Backend va frontend integratsiyasidagi cheklovlarni yuqorida ko'ring.
