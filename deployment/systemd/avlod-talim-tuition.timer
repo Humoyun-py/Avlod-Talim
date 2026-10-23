@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily overdue tuition enforcement schedule
+
+[Timer]
+OnCalendar=*-*-* 01:15:00
+Persistent=true
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target

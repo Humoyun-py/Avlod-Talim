@@ -1,0 +1,28 @@
+[Unit]
+Description=Avlod Ta'lim Django API (Gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=avlod
+Group=www-data
+WorkingDirectory=/srv/avlod-talim/backend
+EnvironmentFile=/etc/avlod-talim/backend.env
+Environment=PYTHONUNBUFFERED=1
+RuntimeDirectory=avlod-talim
+RuntimeDirectoryMode=0750
+ExecStart=/srv/avlod-talim/backend/.venv/bin/gunicorn config.wsgi:application --workers 3 --bind unix:/run/avlod-talim/gunicorn.sock --access-logfile - --error-logfile - --timeout 60 --umask 007
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGQUIT
+TimeoutStopSec=30
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/avlod-talim/backend/private_media /run/avlod-talim
+NoNewPrivileges=true
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

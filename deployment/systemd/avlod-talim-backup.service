@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up Avlod Ta'lim PostgreSQL database and private uploads
+
+[Service]
+Type=oneshot
+User=root
+EnvironmentFile=/etc/avlod-talim/backup.env
+ExecStart=/srv/avlod-talim/deployment/scripts/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true

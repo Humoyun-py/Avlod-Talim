@@ -1,0 +1,15 @@
+[Unit]
+Description=Apply overdue tuition restrictions for Avlod Ta'lim
+After=avlod-talim.service
+
+[Service]
+Type=oneshot
+User=avlod
+Group=www-data
+WorkingDirectory=/srv/avlod-talim/backend
+EnvironmentFile=/etc/avlod-talim/backend.env
+ExecStart=/srv/avlod-talim/backend/.venv/bin/python manage.py enforce_tuition
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+PrivateTmp=true

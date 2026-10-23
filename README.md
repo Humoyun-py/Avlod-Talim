@@ -136,15 +136,8 @@ Backendda rolga asoslangan foydalanuvchilar, login/JWT, kurslar, guruhlar, darsl
 
 Shu sabab muvaffaqiyatli login yoki build barcha bo'limlar production'da ishlashini anglatmaydi.
 
-## Production deploy haqida
+## Production deploy
 
-Repositoryda hozircha tayyor Docker, Nginx yoki systemd deploy konfiguratsiyasi yo'q. Production uchun kamida quyidagilarni alohida sozlash kerak:
+Ubuntu, PostgreSQL, Gunicorn, Nginx, HTTPS, systemd timer va DB/media backup bo'yicha deploy qo'llanma [DEPLOYMENT.md](DEPLOYMENT.md) faylida. Repo'da systemd/Nginx namunalari `deployment/` ichida. Haqiqiy domen va server ma'lumotlari bilan sozlash shart; serverga deploy avtomatik bajarilmaydi.
 
-- `DEBUG=false` va uzun, tasodifiy `DJANGO_SECRET_KEY`
-- PostgreSQL `DATABASE_URL` va ma'lumotlar bazasi zaxira nusxasi
-- Haqiqiy domenlar uchun `DJANGO_ALLOWED_HOSTS` va `CORS_ALLOWED_ORIGINS`
-- HTTPS, xavfsiz cookie va statik fayllar
-- Frontend build vaqtida production `VITE_API_BASE_URL`
-- Yuklangan chek va fayllar uchun autentifikatsiyalangan, maxfiy saqlash
-
-Production sozlamalarini server turi, domen va ma'lumotlarni ko'chirish talabi ma'lum bo'lgandan keyingina qo'llang. Lokal `.env`, parollar, tokenlar, `db.sqlite3` yoki foydalanuvchi ma'lumotlarini GitHub'ga yuklamang.
+Productionda PostgreSQL, `DEBUG=false`, serverga xos kuchli `DJANGO_SECRET_KEY`, aniq host/CORS/CSRF domenlari talab qilinadi. `backend/.env` va barcha credentiallar Git'dan tashqarida qolishi kerak. Private chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpointi hali yo'q; Nginx ularni public qilmaydi. Backend va frontend integratsiyasidagi cheklovlarni yuqorida ko'ring.
