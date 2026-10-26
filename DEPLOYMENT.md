@@ -7,7 +7,7 @@ Loyiha Render Blueprint (`render.yaml`) va build skripti (`backend/build.sh`) bi
 1. O'zgarishlarni GitHub'dagi `Humoyun-py/Avlod-Talim` repository'ga push qiling.
 2. Render Dashboard'da **New + → Blueprint** ni bosing, repository'ni ulang va `render.yaml` ni tanlang.
 3. Blueprint `avlod-talim-db` PostgreSQL va `avlod-talim-api` Django Web Service yaratadi. `DJANGO_SECRET_KEY` avtomatik hosil qilinadi, `DATABASE_URL` database connection string'iga ulanadi.
-4. Blueprint yaratishda `CORS_ALLOWED_ORIGINS` va `CSRF_TRUSTED_ORIGINS` so'raladi. Bu qiymatlarga faqat haqiqiy HTTPS frontend originlarini kiriting (masalan, har bir panel alohida host bo'lsa, barchasini vergul bilan yozing). API domenini bu ro'yxatga faqat u brauzer frontend origin sifatida ishlatilsa kiriting.
+4. Blueprint yaratishda `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` va private media bucket credentiallari so'raladi. Bu qiymatlarga faqat haqiqiy HTTPS frontend originlarini kiriting (masalan, har bir panel alohida host bo'lsa, barchasini vergul bilan yozing). API domenini bu ro'yxatga faqat u brauzer frontend origin sifatida ishlatilsa kiriting.
 5. Render hosti `RENDER_EXTERNAL_HOSTNAME` orqali `ALLOWED_HOSTS` ga avtomatik qo'shiladi. Custom API domen ishlatilsa, uni `DJANGO_ALLOWED_HOSTS` ga qo'shib, Render Dashboard'da domenni tasdiqlang.
 6. Build muvaffaqiyatli tugagach, `https://<api-host>/` manzilini oching. API hujjatlari: `https://<api-host>/api/docs/`, schema: `https://<api-host>/api/schema/`.
 
@@ -16,6 +16,7 @@ Loyiha Render Blueprint (`render.yaml`) va build skripti (`backend/build.sh`) bi
 - Runtime: Python 3
 - Root Directory: `backend`
 - Build Command: `./build.sh`
+- Pre-Deploy Command: `python manage.py migrate --noinput`
 - Start Command: `gunicorn config.wsgi:application --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -`
 - Health Check Path: `/`
 
@@ -29,33 +30,58 @@ Kerakli Environment Variables:
 - `CSRF_TRUSTED_ORIGINS`: CSRF uchun ruxsat beriladigan frontendlarning `https://` originlari.
 - `SECURE_SSL_REDIRECT=true`
 - `SECURE_HSTS_SECONDS=3600`
+- `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION_NAME`; S3-compatible provider endpoint talab qilsa `AWS_S3_ENDPOINT_URL` ham.
 
 `DJANGO_SECRET_KEY` bo'lmasa production Django ishga tushmaydi. Render'ning `SECRET_KEY` nomli o'zgaruvchisi ham alias sifatida qabul qilinadi. Secret va database parolini kod, README, GitHub yoki commitga yozmang; `backend/.env` ni commit qilmang.
 
 ## Build va migration
 
-`backend/build.sh` quyidagi tartibda ishlaydi: dependency'larni o'rnatadi, `manage.py check --deploy` bajaradi, `collectstatic --noinput` orqali statik fayllarni yig'adi, so'ng `migrate --noinput` bajaradi. Skript `set -Eeuo pipefail` bilan ishlaydi: har qanday qadam xato bersa build yiqiladi va deployment muvaffaqiyatli hisoblanmaydi.
+`backend/build.sh` dependency'larni o'rnatadi, `manage.py check --deploy` bajaradi va `collectstatic --noinput` bilan statik fayllarni yig'adi. `set -Eeuo pipefail` sabab xato bo'lsa build to'xtaydi. Database migratsiyasi build'da emas, Render `preDeployCommand` bosqichida **bir marta** `python manage.py migrate --noinput` orqali bajariladi. Render yangi web instance'ni ishga tushirishdan oldin bu buyruqni yakunlaydi; buyruq xato kodi bilan tugasa deploy bekor bo'ladi va start buyrug'i ishlamaydi. Bu sozlama pullik service'dagi pre-deploy imkoniyatiga tayanadi.
 
-Render deploy hujjatlarida production migration uchun `preDeployCommand` tavsiya etiladi; bu xususiyat pullik web service'larda mavjud. Hozirgi talabga muvofiq migration `build.sh` ichida qoldi. Agar keyin pullik service'da `preDeployCommand` ishlatilsa, `migrate --noinput` ni build skriptidan olib, pre-deploy maydoniga ko'chiring.
+Migratsiyalarni production'da avtomatik yaratmaymiz: `makemigrations` faqat ishlab chiqish muhitida bajarilib, migration fayli tekshirilib GitHub'ga commit qilinadi. Bir deploy'da bir nechta instance ishga tushsa ham migratsiya instance boshiga takrorlanmaydi. Bitta Render Web Service uchun bitta deploy pipeline ishlating va bir vaqtda parallel manual/auto deploy boshlamang. Migration schema yoki ma'lumotni o'zgartirsa, eski va yangi kod versiyalari bilan vaqtincha mos keladigan bosqichli o'zgarishlardan foydalaning.
+
+### Yangi migration ishlab chiqish va yuborish
+
+Lokal development muhitida, `backend/` papkasida:
+
+```bash
+python manage.py makemigrations
+python manage.py makemigrations --check --dry-run
+python manage.py migrate
+python manage.py test
+git add core/migrations
+git commit -m "Add database migration"
+git push origin main
+```
+
+Generated migration faylini ochib ko'ring: ma'lumot yo'qotadigan `RemoveField`, `DeleteModel`, `AlterField` yoki `RunSQL` bor-yo'qligini baholang. Migrationlarni sababsiz o'chirmang va qayta yaratmang. CI/build `makemigrations` yaratmaydi; u faqat mavjud repo migratsiyalarini qo'llaydi.
+
+Render deploy logida **Pre-Deploy** bosqichi va `migrate --noinput` natijasini tekshiring. Muvaffaqiyatli apply qilingan migrationlar yonida `[X]` bo'ladi. Holatni Render Shell'da ko'rish:
+
+```bash
+python manage.py showmigrations
+python manage.py migrate --check
+```
+
+`showmigrations` bo'limlarni `[X]` (qo'llangan) yoki `[ ]` (kutilayotgan) qilib chiqaradi. Migration yiqilsa, Pre-Deploy logdagi birinchi traceback/DB xatosini toping; web service yangi release'ni ishga tushirmasligi kerak. Sababni tuzatib, migration kodini yangi commit bilan yuboring. Production migration tarixini qo'lda o'zgartirmang, `flush` ishlatmang va jadvallarni o'chirib qayta yaratmang. Backup va restore bosqichlari [SERVER_MIGRATION.md](SERVER_MIGRATION.md) da.
 
 Lokal SQLite'dagi mavjud foydalanuvchi yoki moliyaviy ma'lumotlar yangi Render PostgreSQL'ga avtomatik ko'chmaydi. Ko'chirish kerak bo'lsa, avval alohida backup oling va staging bazada sinovdan o'tgan import rejasidan foydalaning. Production bazada `flush`, migration'larni o'chirish yoki ma'lumotlarni almashtirib yuborishi mumkin bo'lgan restore buyrug'ini ishlatmang.
 
 ## Statik fayllar
 
-Django'da `STATIC_ROOT=staticfiles/`, `STATIC_URL=/static/`; production'da WhiteNoise middleware `SecurityMiddleware` ortidan ishlaydi. `collectstatic` build vaqtida yig'adi va WhiteNoise admin CSS/JS kabi statik fayllarni beradi. Yuklangan media fayllarni Render ephemeral filesystem'ida doimiy saqlanadi deb hisoblamang.
+Django'da `STATIC_ROOT=staticfiles/`, `STATIC_URL=/static/`; production'da WhiteNoise middleware `SecurityMiddleware` ortidan ishlaydi. `collectstatic` build vaqtida yig'adi va WhiteNoise admin CSS/JS kabi statik fayllarni beradi. User uploadlar private S3-compatible bucket'ga yoziladi, Render ephemeral diskiga emas.
 
 ## Maxfiy media fayllar
 
-`TuitionPayment.receipt` va `AssignmentSubmission.file` hozircha `private_media/` papkasidagi model maydonlari. Render instance diski doimiy emas; bundan tashqari fayl egasi va rolini tekshiradigan authenticated download endpoint mavjud emas. Serializer fayl URL'larini qaytarishi mumkin, shuning uchun ularni public bucket, static hosting yoki WhiteNoise orqali tarqatmang.
+`TuitionPayment.receipt`, `AssignmentSubmission.file` va media maydonlari production'da private S3-compatible storage'ga yoziladi. Obyektlarni public qilmang. Ruxsat tekshiruvli API'lar serializer orqali 300 soniyalik signed URL qaytaradi; linkni olgan har kim muddati tugaguncha foydalana oladi. Alohida download endpoint yo'q, shuning uchun haqiqiy production roli bilan file access va link tarqalishi xavfini tekshiring. Local DEBUG rejimida fayllar `private_media/` papkasida qoladi.
 
-Production'da upload va download funksiyalarini yoqishdan oldin:
+Render Blueprint'dan oldin private bucket yarating va public access'ni o'chiring. Production media oqimini ishlatishdan oldin:
 
-1. Ommaga ochiq bo'lmagan private S3-compatible object storage tanlang.
-2. Download endpointida o'quvchi faqat o'z faylini, vakolatli xodim esa ruxsat berilgan fayllarnigina olishini role va egalik bo'yicha tekshiring.
-3. Qisqa muddatli signed URL yarating yoki faylni backend orqali uzating.
-4. Fayl hajmi va turini tekshirish, upload siyosati va zarur bo'lsa zararli dastur skanini qo'shing.
+1. Payment va submission endpointlaridagi role/queryset scoping'ni haqiqiy foydalanuvchi rollari bilan sinang.
+2. Signed URL muddati 300 soniyadan oshmasin; URL'larni log, analytic event yoki public joyga chiqarmang.
+3. Fayl hajmi/turi tekshiruvini, upload siyosatini va kerak bo'lsa malware scan'ni sozlang.
 
-Bu ishlar tugamaguncha maxfiy chek va topshiriq fayllari bilan ishlash production uchun tayyor emas.
+Hozir alohida fayl download endpointi yo'q; serializer'dan kelgan signed URL qisqa muddatli bearer link hisoblanadi. File access testlari muvaffaqiyatli bo'lmaguncha maxfiy upload oqimini faollashtirmang.
 
 ## PostgreSQL va migratsiyalar
 
@@ -68,7 +94,7 @@ python manage.py showmigrations
 python manage.py migrate --check
 ```
 
-`migrate` buyrug'ini build skripti ishga tushiradi. Production database'da migration fayllarini o'chirmang, `flush` qilmang va bazani yangidan yaratmang.
+`migrate` buyrug'i Render `preDeployCommand` bosqichida ishlaydi. Production database'da migration fayllarini o'chirmang, `flush` qilmang va bazani yangidan yaratmang.
 
 ## Tuition cron vazifasi
 
@@ -102,7 +128,7 @@ Media fayllarni private cloud storage'ga o'tkazgach, shifrlash, versioning/backu
 
 ## Deploydan keyingi tekshiruv
 
-1. Build log'da `check --deploy`, `collectstatic`, `migrate` xatosiz yakunlanganini tasdiqlang.
+1. Build log'da `check --deploy` va `collectstatic`, Pre-Deploy log'da `migrate --noinput` xatosiz yakunlanganini tasdiqlang.
 2. `/` HTTP 200 qaytarishi va health check o'tishini tekshiring.
 3. `/admin/login/` sahifasida Django admin CSS/JS to'g'ri ko'rinishini tekshiring.
 4. `/api/docs/` va `/api/schema/` ochilishini tekshiring.

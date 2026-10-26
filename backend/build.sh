@@ -8,4 +8,3 @@ python -m pip install -r requirements.txt
 # Fail early for missing production configuration before changing the database.
 python manage.py check --deploy
 python manage.py collectstatic --noinput
-python manage.py migrate --noinput

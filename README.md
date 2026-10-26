@@ -138,6 +138,6 @@ Shu sabab muvaffaqiyatli login yoki build barcha bo'limlar production'da ishlash
 
 ## Production deploy
 
-Render uchun deploy bo'yicha yo'riqnoma [DEPLOYMENT.md](DEPLOYMENT.md), Blueprint esa [render.yaml](render.yaml) faylida. Ubuntu/VPS uchun systemd va Nginx namunalar [deployment/](deployment/) ichida. Haqiqiy domen va credentiallar bilan Render Dashboard'da sozlash kerak; serverga deploy hali bajarilmagan.
+Render uchun yo'riqnoma [DEPLOYMENT.md](DEPLOYMENT.md), Blueprint esa [render.yaml](render.yaml) faylida. Render'dan VPS yoki boshqa hostingga ko'chirish, PostgreSQL backup/restore va media nusxalash bo'yicha [SERVER_MIGRATION.md](SERVER_MIGRATION.md) ni ko'ring. Ubuntu/VPS uchun systemd va Nginx namunalari [deployment/](deployment/), DB eksport/tiklash skriptlari [migration/](migration/) ichida. Haqiqiy domen va credentiallar bilan Render Dashboard sozlamalari talab qilinadi; deploy bu muhitdan bajarilmagan.
 
-Productionda PostgreSQL, `DEBUG=false`, serverga xos kuchli secret key va aniq host/CORS/CSRF domenlari talab qilinadi. `backend/.env` va barcha credentiallar Git'dan tashqarida qolishi kerak. Private chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpointi hali yo'q; fayllarni ommaga ochmang. Backend va frontend integratsiyasidagi cheklovlarni yuqorida ko'ring.
+Productionda PostgreSQL, `DEBUG=false`, serverga xos kuchli secret key, aniq host/CORS/CSRF domenlari va private S3-compatible media storage talab qilinadi. `backend/.env` va barcha credentiallar Git'dan tashqarida qolishi kerak. Media bucket ommaga ochiq bo'lmasin; API ruxsatlaridan o'tgan javoblar qisqa muddatli signed URL beradi. Backend va frontend integratsiyasidagi cheklovlarni yuqorida ko'ring.
