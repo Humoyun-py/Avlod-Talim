@@ -31,3 +31,18 @@ This does not complete end-to-end panel integration. The standalone director pag
 ## Local development
 
 Set `VITE_API_BASE_URL=http://localhost:8000/api/v1` in each app's `.env.local`, allow each app origin in backend `CORS_ALLOWED_ORIGINS`, run Django from `backend`, then start the desired Vite app with `npm run dev:<panel>` from this directory. Install Python and frontend dependencies first. See backend setup and tests in `backend/README.md`.
+
+## Netlify deployment
+
+Deploy the four Vite apps as four separate Netlify sites connected to the same GitHub repository. Each app has its own `netlify.toml` with the workspace build command, output directory, production `VITE_API_BASE_URL`, and SPA fallback redirect. The Node version is pinned to 24 in `.nvmrc`; the npm workspace lockfile is `frontend/package-lock.json`.
+
+For each Netlify site, select its app directory as **Package directory** and set **Base directory** to `frontend`:
+
+| Site | Package directory | Build command | Publish directory |
+|---|---|---|---|
+| Admin | `frontend/apps/admin` | `npm run build --workspace=@avlod/admin` | `apps/admin/dist` |
+| Director | `frontend/apps/director` | `npm run build --workspace=@avlod/director` | `apps/director/dist` |
+| Teacher | `frontend/apps/teacher` | `npm run build --workspace=@avlod/teacher` | `apps/teacher/dist` |
+| Student | `frontend/apps/student` | `npm run build --workspace=@avlod/student` | `apps/student/dist` |
+
+The checked-in `VITE_API_BASE_URL` points to `https://avlod-talim.onrender.com/api/v1`. That API currently returns HTTP 503, so the published pages can load but authenticated/API workflows will not work until the Render backend is healthy. After Netlify creates the sites, add each actual HTTPS site origin to the backend's `CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS`; do not guess or use a broad wildcard. Netlify deployment also requires the Git branch and this configuration to be pushed to GitHub first.
