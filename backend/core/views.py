@@ -346,7 +346,22 @@ class DashboardView(APIView):
 
 class CoinView(APIView):
     serializer_class = SimplePayloadSerializer
-    def get(self, request): return Response({"balance": coin_balance(request.user), "transactions": list(request.user.coin_transactions.values("id", "amount", "reason", "created_at"))})
+    def get(self, request):
+        student = request.user
+        student_id = request.query_params.get("student")
+        if student_id:
+            student = get_object_or_404(User, pk=student_id, role="student")
+            if request.user.role == "student" and request.user.pk != student.pk:
+                raise PermissionDenied()
+            if request.user.role == "teacher" and not GroupEnrollment.objects.filter(
+                student=student, group__teacher=request.user, active=True
+            ).exists():
+                raise PermissionDenied()
+            if request.user.role not in ("student", "teacher", "director", "admin"):
+                raise PermissionDenied()
+        transactions = student.coin_transactions.values("id", "student_id", "amount", "reason", "created_at")
+        return Response({"balance": coin_balance(student), "transactions": list(transactions)})
+
     def post(self, request):
         student = get_object_or_404(User, pk=request.data.get("student"), role="student")
         if request.user.role not in ("director", "teacher") or (request.user.role == "teacher" and not GroupEnrollment.objects.filter(student=student, group__teacher=request.user, active=True).exists()): raise PermissionDenied()

@@ -14,6 +14,7 @@ import {
   Homework,
   Announcement,
   StudentNotification,
+  Student,
   StudentUser,
   Payment,
   Group,
@@ -37,7 +38,7 @@ export const StudentApiService = {
           body: JSON.stringify({ student_id: studentIdOrUsername, password: pass })
         });
         const raw = res.data.user;
-        const user: StudentUser = { id: String(raw.id), studentId: raw.student_id, username: raw.username, firstName: raw.first_name, lastName: raw.last_name, fullName: `${raw.first_name} ${raw.last_name}`.trim(), role: 'STUDENT', phone: raw.phone || '', bio: '', telegramUsername: '', preferredContact: 'Phone', attendanceRate: 0, coins: 0, paymentStatus: raw.tuition_restricted ? 'restricted' : 'unknown' };
+        const user: StudentUser = { id: String(raw.id), studentId: raw.student_id, username: raw.username, firstName: raw.first_name, lastName: raw.last_name, fullName: `${raw.first_name} ${raw.last_name}`.trim(), role: 'STUDENT', phone: raw.phone || '', bio: '', telegramUsername: '', preferredContact: 'Phone', groupId: '', groupName: '', courseName: '', teacherName: '', attendanceRate: 0, coins: 0, paymentStatus: raw.tuition_restricted ? 'restricted' : 'unknown' };
         ApiClient.setTokens(res.data.access, res.data.refresh);
         return { success: true, user, token: res.data.access };
       } catch (err: unknown) {

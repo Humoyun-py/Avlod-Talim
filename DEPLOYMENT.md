@@ -1,42 +1,41 @@
 # Django backendni Render'ga joylash
 
-Loyiha Render Blueprint (`render.yaml`) va build skripti (`backend/build.sh`) bilan tayyorlandi. Render akkauntiga yoki GitHub repository'ga ulanish imkoni bo'lmagani sababli serverga deploy bajarilmadi. Blueprint'da pullik, doimiy PostgreSQL va pullik web service rejalari ko'rsatilgan: Render bepul servislarini production uchun tavsiya qilmaydi; bepul web servis uxlaydi, bepul PostgreSQL 30 kundan so'ng tugaydi va backup bermaydi. Reja narxi hamda hisob-kitobini Render Dashboard'da tekshiring.
+Render workspace'da `avlod-talim-db` PostgreSQL (Free, PostgreSQL 18) va `Avlod-Talim` web service (Free) mavjud. 2026-10-26 dagi oxirgi ko'rilgan deploy muvaffaqiyatsiz edi; API health tekshiruvi 503 qaytardi. Hozirgi servis Free rejasida, shuning uchun ma'lumotlar bazasining amal qilish muddati/backup cheklovlari va web service uyqu holatini hisobga oling. Pullik tarifga o'tish yoki yangi resurs sotib olish faqat alohida tasdiq bilan amalga oshiriladi. `render.yaml` amaldagi Free resurslarga moslangan, ammo bu tarif production uchun tavsiya etilmaydi.
 
 ## Blueprint orqali boshlash
 
-1. O'zgarishlarni GitHub'dagi `Humoyun-py/Avlod-Talim` repository'ga push qiling.
-2. Render Dashboard'da **New + → Blueprint** ni bosing, repository'ni ulang va `render.yaml` ni tanlang.
-3. Blueprint `avlod-talim-db` PostgreSQL va `avlod-talim-api` Django Web Service yaratadi. `DJANGO_SECRET_KEY` avtomatik hosil qilinadi, `DATABASE_URL` database connection string'iga ulanadi.
-4. Blueprint yaratishda `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` va private media bucket credentiallari so'raladi. Bu qiymatlarga faqat haqiqiy HTTPS frontend originlarini kiriting (masalan, har bir panel alohida host bo'lsa, barchasini vergul bilan yozing). API domenini bu ro'yxatga faqat u brauzer frontend origin sifatida ishlatilsa kiriting.
-5. Render hosti `RENDER_EXTERNAL_HOSTNAME` orqali `ALLOWED_HOSTS` ga avtomatik qo'shiladi. Custom API domen ishlatilsa, uni `DJANGO_ALLOWED_HOSTS` ga qo'shib, Render Dashboard'da domenni tasdiqlang.
-6. Build muvaffaqiyatli tugagach, `https://<api-host>/` manzilini oching. API hujjatlari: `https://<api-host>/api/docs/`, schema: `https://<api-host>/api/schema/`.
+1. `render.yaml` mavjud database yoki web service'ni almashtirishga/yangidan yaratishga urinmasligi uchun Dashboard'dagi Blueprint sync o'zgarishlarini diqqat bilan ko'ring.
+2. `DATABASE_URL` Render ichki PostgreSQL URL'iga bog'langan. `DJANGO_SECRET_KEY` Blueprint orqali yaratiladi; mavjud servisda uni almashtirmang, chunki JWT'lar bekor bo'lishi mumkin.
+3. `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` va private media bucket credentiallarini Environment sahifasida qo'shing. Faqat haqiqiy HTTPS frontend originlari va maxfiy private bucket ishlating.
+4. Build muvaffaqiyatli tugagach, `https://avlod-talim.onrender.com/` manzilini oching. API hujjatlari: `/api/docs/`, schema: `/api/schema/`.
 
 ## Qo'lda Web Service yaratish
 
-- Runtime: Python 3
+- Runtime: Python 3.12
 - Root Directory: `backend`
 - Build Command: `./build.sh`
-- Pre-Deploy Command: `python manage.py migrate --noinput`
-- Start Command: `gunicorn config.wsgi:application --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -`
+- Start Command (joriy Free reja): `python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -`
 - Health Check Path: `/`
 
-Kerakli Environment Variables:
+Paid web service'da migratsiyani alohida Pre-Deploy Command (`python manage.py migrate --noinput`) bilan bajarish afzal. Render Pre-Deploy buyrug'i paid web service uchun mavjud; joriy Free rejada migration Start Command ichida bitta service instance ishga tushganda qo'llanadi. Bir vaqtda parallel deploy boshlamang.
+
+Kerakli Environment Variables (Dashboard'dagi qiymatlarni repo yoki chatga ko'chirmang):
 
 - `DJANGO_DEBUG=false`
 - `DJANGO_SECRET_KEY`: Render'da Generate Value orqali kamida 50 belgili tasodifiy maxfiy qiymat.
 - `DATABASE_URL`: Render PostgreSQL'ning internal connection string'i.
-- `DJANGO_ALLOWED_HOSTS`: API custom domeni bo'lsa o'sha hostname; `onrender.com` hostname avtomatik olinadi.
+- `DJANGO_ALLOWED_HOSTS`: `avlod-talim.onrender.com`; `RENDER_EXTERNAL_HOSTNAME` ham avtomatik qo'shiladi.
 - `CORS_ALLOWED_ORIGINS`: kerakli admin/director/teacher/student frontendlarining `https://` originlari.
 - `CSRF_TRUSTED_ORIGINS`: CSRF uchun ruxsat beriladigan frontendlarning `https://` originlari.
 - `SECURE_SSL_REDIRECT=true`
 - `SECURE_HSTS_SECONDS=3600`
-- `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION_NAME`; S3-compatible provider endpoint talab qilsa `AWS_S3_ENDPOINT_URL` ham.
+- `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION_NAME`, `AWS_S3_ENDPOINT_URL` (R2 uchun).
 
 `DJANGO_SECRET_KEY` bo'lmasa production Django ishga tushmaydi. Render'ning `SECRET_KEY` nomli o'zgaruvchisi ham alias sifatida qabul qilinadi. Secret va database parolini kod, README, GitHub yoki commitga yozmang; `backend/.env` ni commit qilmang.
 
 ## Build va migration
 
-`backend/build.sh` dependency'larni o'rnatadi, `manage.py check --deploy` bajaradi va `collectstatic --noinput` bilan statik fayllarni yig'adi. `set -Eeuo pipefail` sabab xato bo'lsa build to'xtaydi. Database migratsiyasi build'da emas, Render `preDeployCommand` bosqichida **bir marta** `python manage.py migrate --noinput` orqali bajariladi. Render yangi web instance'ni ishga tushirishdan oldin bu buyruqni yakunlaydi; buyruq xato kodi bilan tugasa deploy bekor bo'ladi va start buyrug'i ishlamaydi. Bu sozlama pullik service'dagi pre-deploy imkoniyatiga tayanadi.
+`backend/build.sh` dependency'larni o'rnatadi, `manage.py check --deploy` bajaradi va `collectstatic --noinput` bilan statik fayllarni yig'adi. `set -Eeuo pipefail` sabab xato bo'lsa build to'xtaydi. Joriy Free rejada migration Start Command ichida bajariladi; parallel deploy yoki bir nechta instance'ga o'tishdan oldin paid Pre-Deploy/maintenance oqimini alohida sozlang.
 
 Migratsiyalarni production'da avtomatik yaratmaymiz: `makemigrations` faqat ishlab chiqish muhitida bajarilib, migration fayli tekshirilib GitHub'ga commit qilinadi. Bir deploy'da bir nechta instance ishga tushsa ham migratsiya instance boshiga takrorlanmaydi. Bitta Render Web Service uchun bitta deploy pipeline ishlating va bir vaqtda parallel manual/auto deploy boshlamang. Migration schema yoki ma'lumotni o'zgartirsa, eski va yangi kod versiyalari bilan vaqtincha mos keladigan bosqichli o'zgarishlardan foydalaning.
 
@@ -56,14 +55,14 @@ git push origin main
 
 Generated migration faylini ochib ko'ring: ma'lumot yo'qotadigan `RemoveField`, `DeleteModel`, `AlterField` yoki `RunSQL` bor-yo'qligini baholang. Migrationlarni sababsiz o'chirmang va qayta yaratmang. CI/build `makemigrations` yaratmaydi; u faqat mavjud repo migratsiyalarini qo'llaydi.
 
-Render deploy logida **Pre-Deploy** bosqichi va `migrate --noinput` natijasini tekshiring. Muvaffaqiyatli apply qilingan migrationlar yonida `[X]` bo'ladi. Holatni Render Shell'da ko'rish:
+Render deploy/app logida `migrate --noinput` natijasini tekshiring. Muvaffaqiyatli apply qilingan migrationlar yonida `[X]` bo'ladi. Holatni Render Shell'da ko'rish:
 
 ```bash
 python manage.py showmigrations
 python manage.py migrate --check
 ```
 
-`showmigrations` bo'limlarni `[X]` (qo'llangan) yoki `[ ]` (kutilayotgan) qilib chiqaradi. Migration yiqilsa, Pre-Deploy logdagi birinchi traceback/DB xatosini toping; web service yangi release'ni ishga tushirmasligi kerak. Sababni tuzatib, migration kodini yangi commit bilan yuboring. Production migration tarixini qo'lda o'zgartirmang, `flush` ishlatmang va jadvallarni o'chirib qayta yaratmang. Backup va restore bosqichlari [SERVER_MIGRATION.md](SERVER_MIGRATION.md) da.
+`showmigrations` bo'limlarni `[X]` (qo'llangan) yoki `[ ]` (kutilayotgan) qilib chiqaradi. Migration yiqilsa, deploy/app logdagi birinchi traceback/DB xatosini toping. Sababni tuzatib, migration kodini yangi commit bilan yuboring. Production migration tarixini qo'lda o'zgartirmang, `flush` ishlatmang va jadvallarni o'chirib qayta yaratmang. Backup va restore bosqichlari [SERVER_MIGRATION.md](SERVER_MIGRATION.md) da.
 
 Lokal SQLite'dagi mavjud foydalanuvchi yoki moliyaviy ma'lumotlar yangi Render PostgreSQL'ga avtomatik ko'chmaydi. Ko'chirish kerak bo'lsa, avval alohida backup oling va staging bazada sinovdan o'tgan import rejasidan foydalaning. Production bazada `flush`, migration'larni o'chirish yoki ma'lumotlarni almashtirib yuborishi mumkin bo'lgan restore buyrug'ini ishlatmang.
 

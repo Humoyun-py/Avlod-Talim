@@ -18,7 +18,7 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
-Run the automated suite with `python manage.py test` (or `pytest`). Current verified results: 15 tests pass; `manage.py check` reports no issues; `makemigrations --check --dry-run` reports no model drift; `spectacular --validate` produces the OpenAPI schema without warnings/errors. Tests cover authentication, access scoping, enrollment transactions, attendance correction, payment verification and ledger posting, salary arithmetic and payouts, coin purchases, quiz scoring, assignment submission/review, and account reactivation.
+Run the automated suite with `python manage.py test` (or `pytest`). Current verified results: 16 tests pass; `manage.py check` reports no issues; `makemigrations --check --dry-run` reports no model drift; `spectacular --validate` produces the OpenAPI schema without warnings/errors. Tests cover authentication, access scoping, enrollment transactions, attendance correction, payment verification and ledger posting, salary arithmetic and payouts, coin purchases and teacher ledger scoping, quiz scoring, assignment submission/review, and account reactivation.
 
 OpenAPI schema: `/api/schema/`; Swagger UI: `/api/docs/`. The frontend base URL should include `/api/v1`, for example `VITE_API_BASE_URL=http://localhost:8000/api/v1`. Monthly tuition enforcement is idempotently available as `python manage.py enforce_tuition`; schedule it externally after monthly due dates. The configured due day is used by the operator when creating `TuitionPeriod.due_date` records.
 
@@ -34,7 +34,7 @@ All routes use `/api/v1/` and JWT bearer authentication except login.
 - Accounts: `/students/` supports staff listing/creation of students, `/students/?role=teacher` lists teachers, `/{id}/payments/`, `/{id}/attendance/`, and deactivation.
 - Education: `/courses/`, `/groups/`, `/groups/{id}/students/`, `/lessons/`, `/lessons/{id}/mark-taught/`, `/attendance/`, `/attendance/bulk/`.
 - Finance: `/payments/`, `/payments/{id}/approve/`, `/payments/{id}/reject/`, `/salaries/` (Director monthly report; POST finalizes a period), `/reports/monthly/`, `manage.py enforce_tuition`.
-- Shop and coins: `/shop/products/`, `/shop/purchase/`, `/coins/` (GET own ledger/balance; POST staff coin award).
+- Shop and coins: `/shop/products/`, `/shop/purchase/`, `/coins/` (GET own ledger/balance; staff may request `?student=<id>` for an authorized student's ledger; POST staff coin award).
 - Learning: `/assignments/`, `/quizzes/`, `/quizzes/{id}/submit/`.
 - Notifications: `/notifications/`, `/notifications/{id}/read/`.
 - Role dashboards: `/dashboard/` returns role-appropriate data.

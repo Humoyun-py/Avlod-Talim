@@ -684,13 +684,14 @@ export const teacherService = {
     lessonId?: string
   ): Promise<{ success: boolean; new_balance: number; transaction: CoinTransaction }> {
     const { data: transaction } = await apiClient.post('/coins/', { student: Number(studentId), amount, reason, reference: lessonId || '' });
-    const { data: balance } = await apiClient.get('/coins/');
-    return { success: true, new_balance: balance.balance, transaction: { id: String(transaction.id), student_id: studentId, student_name: '', student_code: '', teacher_id: '', teacher_name: '', group_id: '', group_name: '', amount, reason, created_at: new Date().toISOString() } };
+    const { data: balance } = await apiClient.get(`/coins/?student=${encodeURIComponent(studentId)}`);
+    return { success: true, new_balance: balance.balance, transaction: { id: String(transaction.id), student_id: studentId, student_name: '', student_code: '', teacher_id: '', teacher_name: '', group_id: '', group_name: '', amount, transaction_type: 'reward', reason, created_at: new Date().toISOString() } };
   },
 
   async getCoinTransactions(studentId?: string): Promise<CoinTransaction[]> {
-    const { data } = await apiClient.get('/coins/');
-    return (data.transactions || []).filter((tx: any) => !studentId || String(tx.student_id) === studentId).map((tx: any) => ({ id: String(tx.id), student_id: String(tx.student_id), student_name: '', student_code: '', teacher_id: '', teacher_name: '', group_id: '', group_name: '', amount: tx.amount, reason: tx.reason, created_at: tx.created_at }));
+    const endpoint = studentId ? `/coins/?student=${encodeURIComponent(studentId)}` : '/coins/';
+    const { data } = await apiClient.get(endpoint);
+    return (data.transactions || []).map((tx: any) => ({ id: String(tx.id), student_id: String(tx.student_id), student_name: '', student_code: '', teacher_id: '', teacher_name: '', group_id: '', group_name: '', amount: tx.amount, transaction_type: tx.amount > 0 ? 'reward' : 'spent', reason: tx.reason, created_at: tx.created_at }));
   },
 
   async getShopItems(): Promise<ShopItem[]> {

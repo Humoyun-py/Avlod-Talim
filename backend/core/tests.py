@@ -114,6 +114,15 @@ class DomainTestCase(TestCase):
         self.assertEqual(coin_balance(self.student), 10)
         with self.assertRaises(ValueError): purchase_product(self.student, product.pk)
 
+    def test_teacher_coin_history_is_limited_to_assigned_students(self):
+        award_coins(self.student, 30, self.teacher, "great work", "award-history-1")
+        self.login(self.teacher)
+        response = self.client.get(f"/api/v1/coins/?student={self.student.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["balance"], 30)
+        self.assertEqual(response.data["transactions"][0]["student_id"], self.student.pk)
+        self.assertEqual(self.client.get(f"/api/v1/coins/?student={self.other_student.pk}").status_code, 403)
+
     def test_quiz_server_scoring_and_taught_topic_gate(self):
         lesson = Lesson.objects.create(course=self.course, group=self.group, number=1, title="Topic", teacher=self.teacher, status="completed")
         topic = LessonTopic.objects.create(lesson=lesson, title="Basics")
@@ -164,4 +173,3 @@ class DomainTestCase(TestCase):
         register_payment(self.student, Decimal("100"), "payme", self.admin, "private-pay")
         self.login(self.teacher)
         self.assertEqual(self.client.get("/api/v1/payments/").status_code, 403)
-
