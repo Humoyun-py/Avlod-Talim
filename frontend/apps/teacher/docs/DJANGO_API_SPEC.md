@@ -131,7 +131,7 @@ Marks a scheduled lesson as completed.
   ```
 
 ### `POST /api/teacher/lessons/{id}/video-submissions/`
-Submits a lesson video URL or S3 storage link for quality inspection by Director / Admin.
+Submits a lesson video URL for quality inspection by Director / Admin.
 - **Request Body:**
   ```json
   {

@@ -1,15 +1,15 @@
 # Render'dan VPS yoki boshqa hostingga ko'chirish
 
-Backend hostingga bog'liq emas: `config.wsgi:application`, PostgreSQL `DATABASE_URL`, `requirements.txt`, Django migrations va environment variables'dan foydalanadi. Ushbu qo'llanmada Render'dan yangi Linux serverga database va yuklangan fayllarni yo'qotmasdan ko'chirish tartibi berilgan. Haqiqiy production backup'ni staging'da tiklab tekshirmaguncha ma'lumotlar xavfsiz ko'chishini kafolatlab bo'lmaydi.
+Backend hostingga bog'liq emas: `config.wsgi:application`, PostgreSQL `DATABASE_URL`, `requirements.txt`, Django migrations va environment variables'dan foydalanadi. Ushbu qo'llanmada Render'dan yangi Linux serverga database va yuklangan fayllarni ko'chirish tartibi berilgan. Haqiqiy production backup'ni staging'da tiklab tekshirmaguncha ma'lumotlar xavfsiz ko'chishini kafolatlab bo'lmaydi.
 
 ## Saqlanadigan ma'lumotlar
 
-PostgreSQL dump foydalanuvchilar va password hash'lari, kurs/guruh/enrolment, dars va davomat, coin va moliyaviy tranzaksiyalar, to'lovlar, audit yozuvlari, JWT blacklist va Django migration holatini saqlaydi. Yuklangan fayllar alohida private object storage'da bo'ladi; DB backupning o'zi media fayllarni o'z ichiga olmaydi. Ikkalasini ham backup qiling.
+PostgreSQL dump foydalanuvchilar va password hash'lari, kurs/guruh/enrolment, dars va davomat, coin va moliyaviy tranzaksiyalar, to'lovlar, audit yozuvlari, JWT blacklist va Django migration holatini saqlaydi. Yuklangan fayllar `backend/private_media/` lokal papkasida bo'ladi; DB backupning o'zi media fayllarni o'z ichiga olmaydi. Ikkalasini ham alohida backup qiling. Render Free fayl tizimi ephemeral bo'lib, deploy yoki restart fayllarni yo'qotishi mumkin.
 
 ## 1. Avval staging'da ko'chirishni mashq qiling
 
 1. Yangi server yoki staging muhit va **bo'sh** PostgreSQL yarating.
-2. Render DB'dan dump oling, private media fayllarni ko'chiring va staging DB'ga tiklang.
+2. Render DB'dan dump oling, mavjud `backend/private_media/` fayllarini xavfsiz nusxalang va staging DB'ga tiklang.
 3. Shu repository commit'ini joylab, Python virtualenv yarating va `pip install -r backend/requirements.txt` bajaring.
 4. Env sozlab, `check --deploy`, migration, API login/role, moliyaviy yozuvlar va media fayllarini tekshiring.
 5. Staging'dan backup olib, uni yana boshqa bo'sh DB'ga tiklashni sinang. Bu tugamaguncha production cutover qilmang.
@@ -30,12 +30,6 @@ DATABASE_URL=postgresql://USER:URL_ENCODED_PASSWORD@127.0.0.1:5432/avlod_talim
 CORS_ALLOWED_ORIGINS=https://admin.example.uz,https://director.example.uz
 CSRF_TRUSTED_ORIGINS=https://admin.example.uz,https://director.example.uz
 SECURE_SSL_REDIRECT=true
-AWS_STORAGE_BUCKET_NAME=avlod-talim-private-media
-AWS_ACCESS_KEY_ID=<private storage access key>
-AWS_SECRET_ACCESS_KEY=<private storage secret>
-AWS_S3_REGION_NAME=<bucket region>
-# AWS_S3_ENDPOINT_URL=<S3-compatible provider talab qilsa>
-AWS_QUERYSTRING_EXPIRE=300
 ```
 
 `DJANGO_SECRET_KEY`ni o'zgartirmaslik password hash'lari va hali amal qilayotgan JWT'larni saqlaydi. Secret key almashtirilsa faol JWT tokenlar bekor bo'ladi. Database URL ichidagi maxsus belgilarni URL-encode qiling.
@@ -54,17 +48,14 @@ Ulanish URL'ini buyruq satriga ochiq yozmang, shell history yoki log'ga chiqarma
 
 ## 4. Media fayllarni ko'chirish
 
-Production backend private S3-compatible bucket ishlatadi. Bucket ommaga ochiq bo'lmasin; FileField qisqa muddatli signed URL beradi. Render va yangi VPS bir bucket hamda credential ishlatsa, fayllarni ko'chirish shart emas. Boshqa provider'ga o'tishda upload'ni to'xtatib, `uploads/` prefix'ini saqlab fayllarni ko'chiring:
+Production'da media fayllar `backend/private_media/` papkasida saqlanadi. Render Free'da bu papka doimiy emas; deploy yoki restartdan oldin kerakli fayllarni saqlab olish imkoniyati kafolatlanmaydi. Fayllar mavjud va ko'chirish mumkin bo'lsa, upload'ni to'xtatib, serverdan serverga SSH orqali nusxalang. `--delete` ishlatmang.
 
 ```bash
-mkdir -m 700 -p "$PWD/media-transfer"
-aws s3 sync "s3://$SOURCE_BUCKET/uploads/" "$PWD/media-transfer/" --only-show-errors
-aws --endpoint-url="$TARGET_S3_ENDPOINT" s3 sync "$PWD/media-transfer/" "s3://$TARGET_BUCKET/uploads/" --only-show-errors
+rsync -a --protect-args user@old-server:/path/to/backend/private_media/ /secure-transfer/private_media/
+rsync -a --protect-args /secure-transfer/private_media/ user@new-server:/path/to/backend/private_media/
 ```
 
-AWS CLI'da source va target uchun tegishli credential, region va endpoint'ni sozlang. `--delete` ishlatmang. Manba va target'dagi fayllar soni, umumiy hajmi hamda ayrim fayllarning checksum'ini taqqoslang. DB'dagi file path qiymatlarini o'zgartirmang.
-
-Oldingi backend Render'ning vaqtinchalik `private_media/` diskiga upload qilgan bo'lishi mumkin. Bu fayllar restart yoki deploy vaqtida yo'qolishi mumkin. Yangi storage'ni ulash eski fayllarni avtomatik tiklamaydi. Keyingi deploydan oldin eski instance'da fayl qolgan-qolmaganini va ularni private backup'ga olish imkonini tekshiring.
+Manba va target'dagi fayllar soni, umumiy hajmi hamda ayrim fayllarning checksum'ini taqqoslang. DB'dagi file path qiymatlarini o'zgartirmang. Render Free'da deploydan oldin fayllarni eksport qilishga yaroqli doimiy disk yo'q; yo'qolgan fayllarni ushbu deploy tiklamaydi.
 
 ## 5. Dump'ni yangi bo'sh PostgreSQL'ga tiklash
 
@@ -94,15 +85,15 @@ Yangi kodda pending migration bo'lsa, backup borligini tasdiqlagach `python mana
 - Manba va target'dagi user, course, group, enrollment, lesson, attendance, coin, payment, financial transaction, audit log va tuition period sonlarini taqqoslang.
 - Mavjud login, role va password hash ko'chganini test login bilan tekshiring; foydalanuvchilarni qayta ro'yxatdan o'tkazish talab qilinmasligi kerak.
 - Admin/director/teacher/student ruxsatlari, JWT refresh, payment review va API endpointlarni tekshiring.
-- Har bir FileField path target bucket'dagi ayni object key'ga mosligini va signed URL faqat vakolatli API javobida chiqib, 300 soniyada muddati tugashini tekshiring.
+- Mavjud FileField fayllarining lokal diskda borligini va DB'dagi path'lar bilan mosligini tekshiring.
 - HTTPS, CORS/CSRF, admin static fayllari, log'da secret yo'qligi va backup'dan qayta tiklashni tekshiring.
 
 Yakuniy production ko'chirish:
 
 1. Kam yozuv bo'ladigan vaqtni tanlab, Render API va `enforce_tuition` cron'ni vaqtincha to'xtating. Login, payment, upload kabi DB/media yozuvlarini yoping.
-2. Render PostgreSQL'dan yakuniy dump oling; media bucket'ning yakuniy backup/sync'ini qiling.
-3. Rehearsal'dagi emas, yakuniy dump'ni yangi bo'sh target DB'ga tiklang. Yakuniy media fayllarni o'sha key'lar bilan ko'chiring.
-4. Yangi VPS environment variable'larini target DB va storage'ga qarating, Gunicorn/Nginx'ni ishga tushiring va smoke test qiling.
+2. Render PostgreSQL'dan yakuniy dump oling; mavjud lokal media fayllarni ham alohida nusxalang.
+3. Rehearsal'dagi emas, yakuniy dump'ni yangi bo'sh target DB'ga tiklang. Media fayllarni `private_media/` papkasiga ko'chiring.
+4. Yangi VPS environment variable'larini target DB'ga qarating, Gunicorn/Nginx'ni ishga tushiring va smoke test qiling.
 5. DNS va frontend `VITE_API_BASE_URL` ni yangi API host'ga o'tkazing, HTTPS/CORS'ni tekshiring.
 6. Render service, eski DB va backup'larni yangi tizim barqaror ishlaguncha saqlang.
 
@@ -110,7 +101,7 @@ Eski serverni darhol o'chirmang. Cutover'dan keyin yangi DB'ga yozuv tushgan bo'
 
 ## Backup va tiklash davriyligi
 
-Render pullik PostgreSQL'dagi PITR va logical export imkoniyatlarini Dashboard'da tekshiring. Logical export Render'da 7 kun saqlanishi mumkin; uzoq muddatli backup'ni alohida shifrlangan storage'da saqlang. Private media bucket'da versioning/backup va tiklash sinovlarini sozlang. Backup'ni staging'da muntazam tiklab tekshiring.
+Render PostgreSQL'dagi PITR va logical export imkoniyatlarini Dashboard'da tekshiring; ular tarifga bog'liq. Uzoq muddatli DB backup'ni alohida shifrlangan joyda saqlang. Lokal media fayllarni ham alohida himoyalangan backup qiling, agar ular mavjud bo'lsa. Backup'ni staging'da muntazam tiklab tekshiring.
 
 ## Xavfsizlik chegaralari
 

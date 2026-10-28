@@ -6,7 +6,7 @@ Render workspace'da `avlod-talim-db` PostgreSQL (Free, PostgreSQL 18) va `Avlod-
 
 1. `render.yaml` mavjud database yoki web service'ni almashtirishga/yangidan yaratishga urinmasligi uchun Dashboard'dagi Blueprint sync o'zgarishlarini diqqat bilan ko'ring.
 2. `DATABASE_URL` Render ichki PostgreSQL URL'iga bog'langan. `DJANGO_SECRET_KEY` Blueprint orqali yaratiladi; mavjud servisda uni almashtirmang, chunki JWT'lar bekor bo'lishi mumkin.
-3. `CORS_ALLOWED_ORIGINS`, `CSRF_TRUSTED_ORIGINS` va private media bucket credentiallarini Environment sahifasida qo'shing. Faqat haqiqiy HTTPS frontend originlari va maxfiy private bucket ishlating.
+3. `CORS_ALLOWED_ORIGINS` va `CSRF_TRUSTED_ORIGINS` qiymatlarini Environment sahifasida qo'shing. Faqat haqiqiy HTTPS frontend originlarini ishlating.
 4. Build muvaffaqiyatli tugagach, `https://avlod-talim.onrender.com/` manzilini oching. API hujjatlari: `/api/docs/`, schema: `/api/schema/`.
 
 ## Qo'lda Web Service yaratish
@@ -29,7 +29,6 @@ Kerakli Environment Variables (Dashboard'dagi qiymatlarni repo yoki chatga ko'ch
 - `CSRF_TRUSTED_ORIGINS`: CSRF uchun ruxsat beriladigan frontendlarning `https://` originlari.
 - `SECURE_SSL_REDIRECT=true`
 - `SECURE_HSTS_SECONDS=3600`
-- `AWS_STORAGE_BUCKET_NAME`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION_NAME`, `AWS_S3_ENDPOINT_URL` (R2 uchun).
 
 `DJANGO_SECRET_KEY` bo'lmasa production Django ishga tushmaydi. Render'ning `SECRET_KEY` nomli o'zgaruvchisi ham alias sifatida qabul qilinadi. Secret va database parolini kod, README, GitHub yoki commitga yozmang; `backend/.env` ni commit qilmang.
 
@@ -68,19 +67,11 @@ Lokal SQLite'dagi mavjud foydalanuvchi yoki moliyaviy ma'lumotlar yangi Render P
 
 ## Statik fayllar
 
-Django'da `STATIC_ROOT=staticfiles/`, `STATIC_URL=/static/`; production'da WhiteNoise middleware `SecurityMiddleware` ortidan ishlaydi. `collectstatic` build vaqtida yig'adi va WhiteNoise admin CSS/JS kabi statik fayllarni beradi. User uploadlar private S3-compatible bucket'ga yoziladi, Render ephemeral diskiga emas.
+Django'da `STATIC_ROOT=staticfiles/`, `STATIC_URL=/static/`; production'da WhiteNoise middleware `SecurityMiddleware` ortidan ishlaydi. `collectstatic` build vaqtida yig'adi va WhiteNoise admin CSS/JS kabi statik fayllarni beradi.
 
 ## Maxfiy media fayllar
 
-`TuitionPayment.receipt`, `AssignmentSubmission.file` va media maydonlari production'da private S3-compatible storage'ga yoziladi. Obyektlarni public qilmang. Ruxsat tekshiruvli API'lar serializer orqali 300 soniyalik signed URL qaytaradi; linkni olgan har kim muddati tugaguncha foydalana oladi. Alohida download endpoint yo'q, shuning uchun haqiqiy production roli bilan file access va link tarqalishi xavfini tekshiring. Local DEBUG rejimida fayllar `private_media/` papkasida qoladi.
-
-Render Blueprint'dan oldin private bucket yarating va public access'ni o'chiring. Production media oqimini ishlatishdan oldin:
-
-1. Payment va submission endpointlaridagi role/queryset scoping'ni haqiqiy foydalanuvchi rollari bilan sinang.
-2. Signed URL muddati 300 soniyadan oshmasin; URL'larni log, analytic event yoki public joyga chiqarmang.
-3. Fayl hajmi/turi tekshiruvini, upload siyosatini va kerak bo'lsa malware scan'ni sozlang.
-
-Hozir alohida fayl download endpointi yo'q; serializer'dan kelgan signed URL qisqa muddatli bearer link hisoblanadi. File access testlari muvaffaqiyatli bo'lmaguncha maxfiy upload oqimini faollashtirmang.
+`TuitionPayment.receipt`, `AssignmentSubmission.file` va boshqa uploadlar `private_media/` lokal papkasiga yoziladi. Render Free filesystem'i ephemeral: restart yoki redeploy paytida fayllar yo'qolishi mumkin. Maxfiy receipt va topshiriqlarni saqlash uchun bu doimiy backup emas. Alohida autentifikatsiyalangan download endpointi ham yo'q; production'da fayl URL'lari orqali yuklamani tarqatish hozir qo'llab-quvvatlanmaydi. Fayllarni doimiy saqlash zarur bo'lsa, serverda persistent disk yoki private object storage kerak bo'ladi.
 
 ## PostgreSQL va migratsiyalar
 
@@ -123,7 +114,7 @@ Har bir frontendni production uchun build qilayotganda `VITE_API_BASE_URL=https:
 
 Render PostgreSQL backup/PITR imkoniyati, saqlash muddati va tiklash shartlari tarifga bog'liq. Ularni Render Dashboard'da tekshiring. Bepul PostgreSQL ishlatmang: baza 30 kundan so'ng tugaydi va boshqariladigan backup yo'q. Backup yo'q bo'lsa, production'da moliyaviy ma'lumot saqlamang.
 
-Media fayllarni private cloud storage'ga o'tkazgach, shifrlash, versioning/backup, saqlash muddati va tiklash tartibini alohida belgilang. Restore'ni avval staging bazada sinang. To'g'ri baza, backup va vaqtni tekshirmasdan production'da qaytarib bo'lmaydigan restore buyrug'ini ishlatmang.
+Media fayllar `backend/private_media/` papkasida saqlanadi, lekin Render Free'da bu joy doimiy emas. DB backup fayllarni o'z ichiga olmaydi; fayllarni saqlash kerak bo'lsa, serverdan alohida himoyalangan backup oling. Restore'ni avval staging bazada sinang. To'g'ri baza, backup va vaqtni tekshirmasdan production'da qaytarib bo'lmaydigan restore buyrug'ini ishlatmang.
 
 ## Deploydan keyingi tekshiruv
 
@@ -139,7 +130,7 @@ Media fayllarni private cloud storage'ga o'tkazgach, shifrlash, versioning/backu
 
 ## Hozirgi cheklovlar
 
-- Shaxsiy chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpoint va private cloud storage adapter yo'q.
+- Shaxsiy chek va topshiriq fayllari uchun ruxsatni tekshiradigan download endpoint yo'q; Render Free'da lokal media doimiy saqlanmaydi.
 - Ayrim frontendlar mock yoki `localStorage` ishlatadi; barcha frontend va API oqimlari ulanmagan.
 - Ushbu muhitdan PostgreSQL, Render build log, domen va login jarayonini boshidan oxirigacha tekshirish imkoni bo'lmadi.
 - Haqiqiy frontend originlari va custom domenlar noma'lum; CORS/CSRF qiymatlarini Render Dashboard'da o'zingiz kiriting.

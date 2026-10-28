@@ -9,6 +9,5 @@ django-cors-headers>=4.6,<5.0
 python-dotenv>=1.0,<2.0
 gunicorn>=23.0,<24.0
 whitenoise>=6.8,<7.0
-django-storages[s3]>=1.14.4,<2.0
 pytest>=8.3,<9.0
 pytest-django>=4.9,<5.0
