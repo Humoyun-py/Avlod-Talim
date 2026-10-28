@@ -1,10 +1,87 @@
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
+from django.core.management import call_command, CommandError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient
 from .models import *
 from .services import *
+
+class BootstrapStaffAccountsTest(TestCase):
+    env_keys = (
+        "BOOTSTRAP_ADMIN_USERNAME",
+        "BOOTSTRAP_ADMIN_EMAIL",
+        "BOOTSTRAP_ADMIN_PASSWORD",
+        "BOOTSTRAP_DIRECTOR_USERNAME",
+        "BOOTSTRAP_DIRECTOR_EMAIL",
+        "BOOTSTRAP_DIRECTOR_PASSWORD",
+    )
+
+    def set_bootstrap_env(self, values):
+        cleared = dict.fromkeys(self.env_keys, "")
+        with patch.dict("os.environ", {**cleared, **values}, clear=False):
+            call_command("bootstrap_staff_accounts")
+
+    def test_creates_admin_and_director_with_configured_roles(self):
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "A-long-unique-admin-password-2026!",
+            "BOOTSTRAP_DIRECTOR_USERNAME": "initial-director",
+            "BOOTSTRAP_DIRECTOR_EMAIL": "director@example.test",
+            "BOOTSTRAP_DIRECTOR_PASSWORD": "A-long-unique-director-password-2026!",
+        }
+        self.set_bootstrap_env(variables)
+
+        admin = User.objects.get(username="initial-admin")
+        director = User.objects.get(username="initial-director")
+        self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertEqual(director.role, User.Role.DIRECTOR)
+        self.assertTrue(admin.check_password(variables["BOOTSTRAP_ADMIN_PASSWORD"]))
+        self.assertTrue(director.check_password(variables["BOOTSTRAP_DIRECTOR_PASSWORD"]))
+        client = APIClient()
+        for username, password, role in (
+            ("initial-admin", variables["BOOTSTRAP_ADMIN_PASSWORD"], "admin"),
+            ("initial-director", variables["BOOTSTRAP_DIRECTOR_PASSWORD"], "director"),
+        ):
+            response = client.post(
+                "/api/v1/auth/staff/login/",
+                {"username": username, "password": password},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["user"]["role"], role)
+
+    def test_rerun_does_not_change_existing_password(self):
+        original_password = "Original-long-and-unique-password-2026!"
+        user = User.objects.create_user(
+            username="initial-admin",
+            password=original_password,
+            role=User.Role.ADMIN,
+        )
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "Different-long-and-unique-password-2026!",
+        }
+        self.set_bootstrap_env(variables)
+
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(original_password))
+        self.assertFalse(user.check_password(variables["BOOTSTRAP_ADMIN_PASSWORD"]))
+
+    def test_rejects_partial_configuration_and_existing_wrong_role(self):
+        with self.assertRaises(CommandError):
+            self.set_bootstrap_env({"BOOTSTRAP_ADMIN_USERNAME": "initial-admin"})
+
+        User.objects.create_user(username="initial-admin", password="not-used", role=User.Role.STUDENT)
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "A-long-unique-admin-password-2026!",
+        }
+        with self.assertRaises(CommandError):
+            self.set_bootstrap_env(variables)
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class DomainTestCase(TestCase):

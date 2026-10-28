@@ -14,7 +14,7 @@ Render workspace'da `avlod-talim-db` PostgreSQL (Free, PostgreSQL 18) va `Avlod-
 - Runtime: Python 3.12
 - Root Directory: `backend`
 - Build Command: `./build.sh`
-- Start Command (joriy Free reja): `python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -`
+- Start Command (joriy Free reja): `python manage.py migrate --noinput && python manage.py bootstrap_staff_accounts && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --access-logfile - --error-logfile -`
 - Health Check Path: `/`
 
 Paid web service'da migratsiyani alohida Pre-Deploy Command (`python manage.py migrate --noinput`) bilan bajarish afzal. Render Pre-Deploy buyrug'i paid web service uchun mavjud; joriy Free rejada migration Start Command ichida bitta service instance ishga tushganda qo'llanadi. Bir vaqtda parallel deploy boshlamang.
@@ -29,8 +29,11 @@ Kerakli Environment Variables (Dashboard'dagi qiymatlarni repo yoki chatga ko'ch
 - `CSRF_TRUSTED_ORIGINS`: CSRF uchun ruxsat beriladigan frontendlarning `https://` originlari.
 - `SECURE_SSL_REDIRECT=true`
 - `SECURE_HSTS_SECONDS=3600`
+- Ixtiyoriy boshlang'ich panel akkauntlari: `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_DIRECTOR_USERNAME`, `BOOTSTRAP_DIRECTOR_EMAIL`, `BOOTSTRAP_DIRECTOR_PASSWORD`. Har bir akkaunt uchun uchala qiymatni Render Dashboard'da kiriting; parollarni repository/chat'ga qo'ymang.
 
 `DJANGO_SECRET_KEY` bo'lmasa production Django ishga tushmaydi. Render'ning `SECRET_KEY` nomli o'zgaruvchisi ham alias sifatida qabul qilinadi. Secret va database parolini kod, README, GitHub yoki commitga yozmang; `backend/.env` ni commit qilmang.
+
+Deploy paytida `bootstrap_staff_accounts` sozlangan admin va director panel akkauntlarini yo'q bo'lsa yaratadi. Boshlang'ich sozlamalar kiritilmagan bo'lsa, buyruq hech narsa yaratmay o'tadi. Username mavjud va roli mos bo'lsa, foydalanuvchini yoki parolini o'zgartirmaydi; roli mos bo'lmasa deployni aniq xato bilan to'xtatadi. Parol Django validatorlaridan o'tishi shart. Bu akkauntlar React panellari uchun; Django `/admin/` saytiga alohida superuser kerak.
 
 ## Build va migration
 
