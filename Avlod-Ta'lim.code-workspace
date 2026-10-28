@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../Downloads/Avlod-Ta-lim-admin-main"
+		},
+		{
+			"path": "../Downloads/Avlod-Ta-lim-Student-main"
+		},
+		{
+			"path": "../Downloads/Avlod-Ta-lim-teacher-panel-main"
+		},
+		{
+			"path": "../Downloads/Avlod-Ta-lim-director-panel-main"
+		}
+	],
+	"settings": {}
+}
