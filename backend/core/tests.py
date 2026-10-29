@@ -13,9 +13,11 @@ class BootstrapStaffAccountsTest(TestCase):
         "BOOTSTRAP_ADMIN_USERNAME",
         "BOOTSTRAP_ADMIN_EMAIL",
         "BOOTSTRAP_ADMIN_PASSWORD",
+        "BOOTSTRAP_ADMIN_RESET_PASSWORD",
         "BOOTSTRAP_DIRECTOR_USERNAME",
         "BOOTSTRAP_DIRECTOR_EMAIL",
         "BOOTSTRAP_DIRECTOR_PASSWORD",
+        "BOOTSTRAP_DIRECTOR_RESET_PASSWORD",
     )
 
     def set_bootstrap_env(self, values):
@@ -69,6 +71,28 @@ class BootstrapStaffAccountsTest(TestCase):
         user.refresh_from_db()
         self.assertTrue(user.check_password(original_password))
         self.assertFalse(user.check_password(variables["BOOTSTRAP_ADMIN_PASSWORD"]))
+
+    def test_explicit_reset_replaces_existing_password_for_the_same_role_account(self):
+        old_password = "Old-long-unique-director-password-2026!"
+        new_password = "Brand-new-unique-director-password-2026!"
+        user = User.objects.create_user(
+            username="existing-director",
+            password=old_password,
+            email="director@example.test",
+            role=User.Role.DIRECTOR,
+        )
+        self.set_bootstrap_env(
+            {
+                "BOOTSTRAP_DIRECTOR_USERNAME": "existing-director",
+                "BOOTSTRAP_DIRECTOR_EMAIL": "director@example.test",
+                "BOOTSTRAP_DIRECTOR_PASSWORD": new_password,
+                "BOOTSTRAP_DIRECTOR_RESET_PASSWORD": "true",
+            }
+        )
+
+        user.refresh_from_db()
+        self.assertFalse(user.check_password(old_password))
+        self.assertTrue(user.check_password(new_password))
 
     def test_rejects_partial_configuration_and_existing_wrong_role(self):
         with self.assertRaises(CommandError):

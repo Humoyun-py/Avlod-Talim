@@ -9,7 +9,7 @@ from core.models import User
 
 
 class Command(BaseCommand):
-    help = "Create configured initial admin and director accounts without changing existing users."
+    help = "Create initial staff accounts and optionally reset their passwords."
 
     account_configs = (
         ("admin", User.Role.ADMIN, "BOOTSTRAP_ADMIN"),
@@ -24,9 +24,13 @@ class Command(BaseCommand):
                 "email": os.getenv(f"{prefix}_EMAIL", "").strip(),
                 "password": os.getenv(f"{prefix}_PASSWORD", ""),
             }
+            reset_value = os.getenv(f"{prefix}_RESET_PASSWORD", "").strip().lower()
+            if reset_value not in {"", "1", "0", "true", "false", "yes", "no", "on", "off"}:
+                raise CommandError(f"{prefix}_RESET_PASSWORD must be a boolean value.")
+            values["reset_password"] = reset_value in {"1", "true", "yes", "on"}
             if not any(values.values()):
                 continue
-            if not all(values.values()):
+            if not all(values[key] for key in ("username", "email", "password")):
                 raise CommandError(
                     f"Set {prefix}_USERNAME, {prefix}_EMAIL, and {prefix}_PASSWORD together."
                 )
@@ -43,6 +47,19 @@ class Command(BaseCommand):
                     raise CommandError(
                         f"{prefix}_USERNAME belongs to an account with a different role."
                     )
+                if values["reset_password"] and not existing.check_password(values["password"]):
+                    try:
+                        validate_password(values["password"], user=existing)
+                    except ValidationError as exc:
+                        raise CommandError(
+                            f"{prefix}_PASSWORD does not meet password requirements."
+                        ) from exc
+                    existing.set_password(values["password"])
+                    existing.save(update_fields=["password"])
+                    self.stdout.write(
+                        self.style.SUCCESS(f"Updated {label} account password.")
+                    )
+                    continue
                 self.stdout.write(f"{label.capitalize()} account already exists; unchanged.")
                 continue
 

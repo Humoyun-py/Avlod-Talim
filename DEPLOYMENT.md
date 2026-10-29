@@ -30,10 +30,11 @@ Kerakli Environment Variables (Dashboard'dagi qiymatlarni repo yoki chatga ko'ch
 - `SECURE_SSL_REDIRECT=true`
 - `SECURE_HSTS_SECONDS=3600`
 - Ixtiyoriy boshlang'ich panel akkauntlari: `BOOTSTRAP_ADMIN_USERNAME`, `BOOTSTRAP_ADMIN_EMAIL`, `BOOTSTRAP_ADMIN_PASSWORD`, `BOOTSTRAP_DIRECTOR_USERNAME`, `BOOTSTRAP_DIRECTOR_EMAIL`, `BOOTSTRAP_DIRECTOR_PASSWORD`. Har bir akkaunt uchun uchala qiymatni Render Dashboard'da kiriting; parollarni repository/chat'ga qo'ymang.
+- Mavjud akkaunt parolini aniq yangilash uchun tegishli `BOOTSTRAP_ADMIN_RESET_PASSWORD=true` yoki `BOOTSTRAP_DIRECTOR_RESET_PASSWORD=true` ni faqat bitta deploy davomida yoqing. Deploy muvaffaqiyatli bo'lib, yangi login tekshirilgach flagni darhol o'chiring. Username mavjud akkauntga aynan mos bo'lishi kerak.
 
 `DJANGO_SECRET_KEY` bo'lmasa production Django ishga tushmaydi. Render'ning `SECRET_KEY` nomli o'zgaruvchisi ham alias sifatida qabul qilinadi. Secret va database parolini kod, README, GitHub yoki commitga yozmang; `backend/.env` ni commit qilmang.
 
-Deploy paytida `bootstrap_staff_accounts` sozlangan admin va director panel akkauntlarini yo'q bo'lsa yaratadi. Boshlang'ich sozlamalar kiritilmagan bo'lsa, buyruq hech narsa yaratmay o'tadi. Username mavjud va roli mos bo'lsa, foydalanuvchini yoki parolini o'zgartirmaydi; roli mos bo'lmasa deployni aniq xato bilan to'xtatadi. Parol Django validatorlaridan o'tishi shart. Bu akkauntlar React panellari uchun; Django `/admin/` saytiga alohida superuser kerak.
+Deploy paytida `bootstrap_staff_accounts` sozlangan admin va director panel akkauntlarini yo'q bo'lsa yaratadi. Boshlang'ich sozlamalar kiritilmagan bo'lsa, buyruq hech narsa yaratmay o'tadi. Username mavjud va roli mos bo'lsa, parolni o'zgartirmaydi; faqat tegishli `*_RESET_PASSWORD=true` bo'lganda parolni yangilaydi. Flagni keyingi deploydan oldin o'chiring. Roli mos bo'lmasa deploy aniq xato bilan to'xtaydi. Parol Django validatorlaridan o'tishi shart. Bu akkauntlar React panellari uchun; Django `/admin/` saytiga alohida superuser kerak.
 
 ## Build va migration
 
