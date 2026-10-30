@@ -35,6 +35,8 @@ class ApiService {
     this.refreshTokenVal = null;
     sessionStorage.removeItem('avlod_access_token');
     sessionStorage.removeItem('avlod_refresh_token');
+    localStorage.removeItem('avlod_access_token');
+    localStorage.removeItem('avlod_refresh_token');
   }
 
   public getAccessToken(): string | null {
@@ -43,6 +45,14 @@ class ApiService {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
+    this.accessToken =
+      sessionStorage.getItem('avlod_access_token') ||
+      localStorage.getItem('avlod_access_token') ||
+      this.accessToken;
+    this.refreshTokenVal =
+      sessionStorage.getItem('avlod_refresh_token') ||
+      localStorage.getItem('avlod_refresh_token') ||
+      this.refreshTokenVal;
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
     };
