@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
-import { apiClient } from '../services/apiClient';
+import { apiClient, LOGIN_TIMEOUT_MS } from '../services/apiClient';
 
 interface AuthContextType {
   user: User | null;
@@ -31,7 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const login = async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
     setIsLoading(true);
     try {
-      const { data } = await apiClient.post('/auth/staff/login/', { username: username.trim(), password });
+      const { data } = await apiClient.post('/auth/staff/login/', { username: username.trim(), password }, { timeout: LOGIN_TIMEOUT_MS });
       if (data.user.role !== 'teacher') throw new Error('Ushbu panelga faqat o‘qituvchi hisobi kira oladi.');
       localStorage.setItem('avlod_access_token', data.access);
       localStorage.setItem('avlod_refresh_token', data.refresh);
