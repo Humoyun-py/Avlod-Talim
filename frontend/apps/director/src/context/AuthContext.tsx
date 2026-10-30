@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { DirectorService } from '../services/mockService';
 import { apiClient, LOGIN_TIMEOUT_MS } from '../../../teacher/src/services/apiClient';
+import { api } from '../../../admin/src/services/api';
 
 export interface DirectorUser {
   id: string;
@@ -67,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.setItem('avlod_refresh_token', data.refresh);
       localStorage.setItem('avlod_auth_user', JSON.stringify(data.user));
       localStorage.setItem(AUTH_STORAGE_KEY, 'true');
+      api.setTokens(data.access, data.refresh);
       const director = { ...DEFAULT_DIRECTOR, id: String(data.user.id), username: data.user.username, fullName: `${data.user.first_name} ${data.user.last_name}`.trim() };
       setIsAuthenticated(true); setUser(director);
       return { success: true };
@@ -81,6 +83,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       localStorage.removeItem('avlod_access_token');
       localStorage.removeItem('avlod_refresh_token');
       localStorage.removeItem('avlod_auth_user');
+      api.clearTokens();
     } catch {
       // ignore
     }
