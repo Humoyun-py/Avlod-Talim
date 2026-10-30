@@ -335,8 +335,6 @@ class DashboardView(APIView):
         teachers = User.objects.filter(role="teacher", is_active=True).count()
         groups = TeachingGroup.objects.filter(active=True).count()
         pending = TuitionPayment.objects.filter(status="pending").count()
-        if request.user.role == "admin":
-            return Response({"students": students, "teachers": teachers, "groups": groups, "pending_payments": pending})
         outstanding = Decimal("0.00")
         for period in TuitionPeriod.objects.filter(closed=False).values("student_id", "year", "month", "amount_due"):
             paid = FinancialTransaction.objects.filter(student_id=period["student_id"], kind=FinancialTransaction.Type.TUITION,

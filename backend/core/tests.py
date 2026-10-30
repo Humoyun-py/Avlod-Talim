@@ -248,6 +248,28 @@ class DomainTestCase(TestCase):
         self.login(self.director)
         self.assertEqual(self.client.get("/api/v1/salaries/").status_code, 200)
 
+    def test_admin_and_director_dashboard_response_shapes_match(self):
+        expected_keys = {"metrics", "recent_activities", "charts"}
+        expected_metric_keys = {
+            "total_students",
+            "active_students",
+            "total_groups",
+            "available_courses",
+            "payments_this_month",
+            "outstanding_payments",
+            "pending_payment_verifications",
+            "pending_shop_orders",
+        }
+
+        for user in (self.admin, self.director):
+            with self.subTest(role=user.role):
+                self.login(user)
+                response = self.client.get("/api/v1/dashboard/")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.data), expected_keys)
+                self.assertEqual(set(response.data["metrics"]), expected_metric_keys)
+
     def test_assignment_submission_and_teacher_review_permissions(self):
         lesson = Lesson.objects.create(course=self.course, group=self.group, number=1, title="Work", teacher=self.teacher, status="completed")
         assignment = Assignment.objects.create(lesson=lesson, title="Homework", created_by=self.teacher)
