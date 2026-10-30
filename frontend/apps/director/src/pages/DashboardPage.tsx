@@ -25,10 +25,13 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { DirectorService } from '../services/mockService';
 import { Payment, ShopOrder, Student, Teacher, Group, TeacherSalaryRecord } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const { user } = useAuth();
+  const displayName = user?.username || user?.fullName || 'Director';
   const [loading, setLoading] = useState(true);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -112,7 +115,7 @@ export const DashboardPage: React.FC = () => {
             {t('dashboard.badge')}
           </span>
           <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-            {t('dashboard.welcome_prefix')}, Sardor Rahmonov
+            {t('dashboard.welcome_prefix')}, {displayName}
           </h2>
           <p className="text-xs sm:text-sm text-gray-500">
             {t('dashboard.welcome_subtitle')}

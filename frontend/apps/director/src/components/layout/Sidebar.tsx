@@ -207,7 +207,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-bold text-gray-900 truncate">
-                    {user?.fullName || 'Sardor Rahmonov'}
+                    {user?.username || user?.fullName || 'Director'}
                   </p>
                   <div className="flex items-center gap-1">
                     <ShieldCheck className="w-3 h-3 text-[#5C42FD]" />
