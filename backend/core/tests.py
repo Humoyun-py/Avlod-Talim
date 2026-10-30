@@ -123,6 +123,45 @@ class DomainTestCase(TestCase):
     def login(self, user):
         self.client.force_authenticate(user)
 
+    def test_director_cannot_create_teacher_with_username_used_by_any_account(self):
+        self.login(self.director)
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "role": "teacher",
+                "first_name": "New",
+                "last_name": "Teacher",
+                "username": self.student.username.upper(),
+                "password": "Teacher-long-and-unique-2026!",
+                "confirm_password": "Teacher-long-and-unique-2026!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", str(response.data["username"]))
+        self.assertFalse(User.objects.filter(username="new-teacher").exists())
+
+    def test_director_can_create_teacher(self):
+        self.login(self.director)
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "role": "teacher",
+                "first_name": "New",
+                "last_name": "Teacher",
+                "username": "new-teacher",
+                "password": "Teacher-long-and-unique-2026!",
+                "confirm_password": "Teacher-long-and-unique-2026!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        teacher = User.objects.get(username="new-teacher")
+        self.assertEqual(teacher.role, User.Role.TEACHER)
+        self.assertTrue(teacher.check_password("Teacher-long-and-unique-2026!"))
+
     def test_staff_and_student_login_and_student_restriction(self):
         response = self.client.post("/api/v1/auth/staff/login/", {"username": "teacher", "password": "TeacherPass123!"})
         self.assertEqual(response.status_code, 200)

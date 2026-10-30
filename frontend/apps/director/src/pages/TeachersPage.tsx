@@ -38,6 +38,27 @@ import { Pagination } from '../components/common/Pagination';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
+const getSaveErrorMessage = (caught: unknown): string => {
+  const collectMessages = (value: unknown): string[] => {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(collectMessages);
+    if (typeof value === 'object' && value !== null) {
+      return Object.values(value).flatMap(collectMessages);
+    }
+    return [];
+  };
+
+  if (typeof caught === 'object' && caught !== null) {
+    const requestError = caught as { data?: unknown; message?: string };
+    const messages = collectMessages(requestError.data);
+    if (messages.length) return messages.join(' ');
+    if (requestError.message && requestError.message !== 'Request failed') {
+      return requestError.message;
+    }
+  }
+  return 'Ustoz ma’lumotlarini saqlab bo‘lmadi. Qayta urinib ko‘ring.';
+};
+
 export const TeachersPage: React.FC = () => {
   const { t, language } = useLanguage();
   const { success, error, info } = useToast();
@@ -96,6 +117,7 @@ export const TeachersPage: React.FC = () => {
     avatarUrl: ''
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [savingTeacher, setSavingTeacher] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [phoneRaw, setPhoneRaw] = useState('');
@@ -252,8 +274,9 @@ export const TeachersPage: React.FC = () => {
 
   const handleSaveTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!validateForm()) return;
+    if (savingTeacher || !validateForm()) return;
 
+    setSavingTeacher(true);
     try {
       if (editingTeacher) {
         await DirectorService.updateTeacher(editingTeacher.id, {
@@ -298,8 +321,10 @@ export const TeachersPage: React.FC = () => {
       setPhoneRaw('');
       setFormErrors({});
       loadTeachers();
-    } catch {
-      error('Xatolik', 'Ustoz ma’lumotlarini saqlashda muammo yuz berdi');
+    } catch (caught) {
+      error('Xatolik', getSaveErrorMessage(caught));
+    } finally {
+      setSavingTeacher(false);
     }
   };
 
@@ -911,21 +936,22 @@ export const TeachersPage: React.FC = () => {
           <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100">
             <button
               type="button"
+              disabled={savingTeacher}
               onClick={() => {
                 setCreateModalOpen(false);
                 setEditingTeacher(null);
               }}
-              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 disabled:opacity-60 disabled:cursor-not-allowed rounded-xl transition-colors cursor-pointer"
             >
               {t('common.cancel')}
             </button>
             <button
               type="submit"
-              disabled={isUsernameTaken}
+              disabled={isUsernameTaken || savingTeacher}
               className="px-5 py-2.5 text-xs font-bold text-white bg-[#5C42FD] hover:bg-[#4d33eb] disabled:bg-[#5C42FD]/60 disabled:cursor-not-allowed rounded-xl shadow-xs shadow-[#5C42FD]/20 transition-all cursor-pointer flex items-center gap-1.5"
             >
-              {editingTeacher ? <Check className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
-              <span>{editingTeacher ? t('common.save') : t('teachers.new_teacher')}</span>
+              {savingTeacher ? <Clock className="w-4 h-4 animate-spin" /> : editingTeacher ? <Check className="w-4 h-4" /> : <UserPlus className="w-4 h-4" />}
+              <span>{savingTeacher ? 'Saqlanmoqda...' : editingTeacher ? t('common.save') : t('teachers.new_teacher')}</span>
             </button>
           </div>
         </form>
