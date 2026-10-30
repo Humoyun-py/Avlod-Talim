@@ -19,8 +19,8 @@ class ApiService {
   private refreshTokenVal: string | null = null;
 
   constructor() {
-    this.accessToken = sessionStorage.getItem('avlod_access_token');
-    this.refreshTokenVal = sessionStorage.getItem('avlod_refresh_token');
+    this.accessToken = sessionStorage.getItem('avlod_access_token') || localStorage.getItem('avlod_access_token');
+    this.refreshTokenVal = sessionStorage.getItem('avlod_refresh_token') || localStorage.getItem('avlod_refresh_token');
   }
 
   public setTokens(access: string, refresh: string) {
