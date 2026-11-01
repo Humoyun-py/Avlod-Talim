@@ -622,6 +622,55 @@ class DomainTestCase(TestCase):
         response = self.client.post("/api/v1/attendance/bulk/", {"lesson": 9999, "records": []}, format="json")
         self.assertEqual(response.status_code, 404)
 
+    def test_assigned_teacher_can_start_a_planned_lesson_idempotently(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Startable lesson",
+            teacher=self.teacher,
+            status=Lesson.Status.PLANNED,
+        )
+        self.login(self.teacher)
+
+        response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], Lesson.Status.IN_PROGRESS)
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.Status.IN_PROGRESS)
+
+        repeated_response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+        self.assertEqual(repeated_response.status_code, 200, repeated_response.data)
+        self.assertEqual(repeated_response.data["status"], Lesson.Status.IN_PROGRESS)
+
+    def test_teacher_cannot_start_another_teachers_lesson(self):
+        other_teacher = User.objects.create_user(
+            username="other-teacher",
+            password="Unique-other-teacher-password-2026!",
+            role="teacher",
+        )
+        other_group = TeachingGroup.objects.create(
+            name="Other",
+            course=self.course,
+            teacher=other_teacher,
+        )
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=other_group,
+            number=1,
+            title="Other teacher lesson",
+            teacher=other_teacher,
+            status=Lesson.Status.PLANNED,
+        )
+        self.login(self.teacher)
+
+        response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+
+        self.assertEqual(response.status_code, 404)
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.Status.PLANNED)
+
     def test_salary_endpoint_director_only(self):
         self.login(self.admin)
         self.assertEqual(self.client.get("/api/v1/salaries/").status_code, 403)

@@ -76,6 +76,7 @@ class CourseMonth(models.Model):
 class Lesson(models.Model):
     class Status(models.TextChoices):
         PLANNED = "planned", "Planned"
+        IN_PROGRESS = "in_progress", "In progress"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="lessons")

@@ -36,7 +36,7 @@ const paged = async <T,>(url: string): Promise<T[]> => {
 };
 const mapGroup = (g: any): Group => ({ id: String(g.id), name: g.name, course_name: g.course_name || '', level: '', student_count: g.enrollments?.length || 0, days: [], start_time: '', end_time: '', room: '', status: g.active ? 'active' : 'paused', start_date: g.start_date, end_date: g.end_date || '' });
 const mapStudent = (s: any, group?: any): Student => ({ id: String(s.id), student_code: s.student_id || '', full_name: s.full_name || `${s.first_name} ${s.last_name}`.trim(), group_id: String(group?.id || ''), group_name: group?.name || '', course_name: group?.course_name || '', phone: s.phone || '', enrollment_status: s.is_active ? 'active' : 'graduated', attendance_rate: 0, total_lessons: 0, attended_lessons: 0, missed_lessons: 0, late_lessons: 0, coins_balance: 0 });
-const mapLesson = (l: any): Lesson => ({ id: String(l.id), group_id: String(l.group), group_name: l.group_name || '', course_name: l.course_name || '', date: l.scheduled_date || '', start_time: '', end_time: '', room: '', status: l.status === 'cancelled' ? 'cancelled' : l.status === 'completed' ? 'completed' : 'planned', topic: l.title, topic_id: l.topic_id, attendance_submitted: false });
+const mapLesson = (l: any): Lesson => ({ id: String(l.id), group_id: String(l.group), group_name: l.group_name || '', course_name: l.course_name || '', date: l.scheduled_date || '', start_time: '', end_time: '', room: '', status: l.status === 'cancelled' ? 'cancelled' : l.status === 'completed' ? 'completed' : l.status === 'in_progress' ? 'in_progress' : 'planned', topic: l.title, topic_id: l.topic_id, attendance_submitted: false });
 
 export const MAX_COIN_REWARD_LIMIT = 50;
 
@@ -542,7 +542,8 @@ export const teacherService = {
   },
 
   async startLesson(lessonId: string): Promise<Lesson> {
-    throw new Error('The backend has no separate lesson-start state.');
+    const { data } = await apiClient.post(`/lessons/${lessonId}/start/`);
+    return mapLesson(data);
   },
 
   async createLesson(data: {

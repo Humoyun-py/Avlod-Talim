@@ -245,8 +245,15 @@ export const Attendance: React.FC = () => {
     try {
       const targetLessonId = selectedLessonId;
       if (!targetLessonId) throw new Error('Davomat olishdan oldin jadvaldagi darsni tanlang.');
-      const updatedLesson = lessons.find(l => l.id === targetLessonId);
-      if (!updatedLesson) throw new Error('Tanlangan dars topilmadi.');
+      const lesson = lessons.find(l => l.id === targetLessonId);
+      if (!lesson) throw new Error('Tanlangan dars topilmadi.');
+      if (lesson.status !== 'planned' && lesson.status !== 'in_progress') {
+        throw new Error('Faqat rejalashtirilgan darsni boshlash mumkin.');
+      }
+
+      const updatedLesson = lesson.status === 'planned'
+        ? await teacherService.startLesson(lesson.id)
+        : lesson;
 
       // Refresh schedule
       const updatedSchedule = await teacherService.getSchedule();
@@ -254,7 +261,7 @@ export const Attendance: React.FC = () => {
       setSelectedLessonId(updatedLesson.id);
 
       setSuccessMessage(
-        `Guruh: "${updatedLesson.group_name}". Davomatni yuborish uchun tanlangan dars ishlatiladi.`
+        `Guruh: "${updatedLesson.group_name}". Dars boshlandi, endi davomatni belgilang.`
       );
 
       // Load group students with unselected status

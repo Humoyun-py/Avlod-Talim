@@ -279,6 +279,19 @@ class LessonViewSet(viewsets.ModelViewSet):
         if lesson.group.teacher_id != lesson.teacher_id: raise PermissionDenied("Lesson teacher must be assigned to the group")
         if lesson.title:
             LessonTopic.objects.get_or_create(lesson=lesson, title=lesson.title)
+    @action(detail=True, methods=["post"], url_path="start")
+    def start(self, request, pk=None):
+        if request.user.role != "teacher":
+            raise PermissionDenied("Only teachers can start lessons.")
+        lesson = self.get_object()
+        if lesson.status == Lesson.Status.IN_PROGRESS:
+            return Response(self.get_serializer(lesson).data)
+        if lesson.status != Lesson.Status.PLANNED:
+            raise ValidationError({"status": "Only planned lessons can be started."})
+        lesson.status = Lesson.Status.IN_PROGRESS
+        lesson.save(update_fields=["status"])
+        audit(request.user, "lesson.started", lesson)
+        return Response(self.get_serializer(lesson).data)
     @action(detail=True, methods=["post"], url_path="mark-taught")
     def mark_taught(self, request, pk=None):
         lesson = self.get_object(); topic = lesson.topics.get(pk=request.data.get("topic_id")); topic.taught_at = timezone.now(); topic.save(update_fields=["taught_at"]); audit(request.user, "lesson.topic_taught", topic); return Response({"id": topic.id, "taught_at": topic.taught_at})
