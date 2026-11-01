@@ -162,6 +162,19 @@ class DomainTestCase(TestCase):
         self.assertEqual(teacher.role, User.Role.TEACHER)
         self.assertTrue(teacher.check_password("Teacher-long-and-unique-2026!"))
 
+    def test_director_can_deactivate_teacher_without_deleting_related_records(self):
+        self.login(self.director)
+
+        response = self.client.post(
+            f"/api/v1/students/{self.teacher.pk}/deactivate/?role=teacher"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.teacher.refresh_from_db()
+        self.assertFalse(self.teacher.is_active)
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk, teacher=self.teacher).exists())
+        self.assertTrue(AuditLog.objects.filter(action="user.deactivated", object_id=str(self.teacher.pk)).exists())
+
     def test_staff_and_student_login_and_student_restriction(self):
         response = self.client.post("/api/v1/auth/staff/login/", {"username": "teacher", "password": "TeacherPass123!"})
         self.assertEqual(response.status_code, 200)

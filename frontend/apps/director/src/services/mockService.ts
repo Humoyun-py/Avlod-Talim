@@ -64,8 +64,8 @@ export const DirectorService = {
     return { ...(await this.getTeachers()).find(t => t.id === id)!, ...updates };
   },
 
-  async deleteTeacher(id: string): Promise<void> {
-    throw new Error('Use the Director activation controls; teacher deletion is not supported.');
+  async deactivateTeacher(id: string): Promise<void> {
+    await api.deactivateTeacher(id);
   },
 
   // Students

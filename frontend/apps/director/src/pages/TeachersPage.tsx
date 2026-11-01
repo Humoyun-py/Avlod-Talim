@@ -118,6 +118,7 @@ export const TeachersPage: React.FC = () => {
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [savingTeacher, setSavingTeacher] = useState(false);
+  const [updatingTeacherStatus, setUpdatingTeacherStatus] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [phoneRaw, setPhoneRaw] = useState('');
@@ -329,27 +330,33 @@ export const TeachersPage: React.FC = () => {
   };
 
   const handleStatusChange = async (teacher: Teacher, newStatus: 'active' | 'blocked') => {
+    setUpdatingTeacherStatus(true);
     try {
       await DirectorService.updateTeacher(teacher.id, { status: newStatus });
       setConfirmDialog({ isOpen: false, type: 'delete', teacher: null });
-      loadTeachers();
+      await loadTeachers();
       success(
         newStatus === 'active' ? 'Faollashtirildi' : 'Bloklandi',
         `${teacher.fullName} holati o‘zgartirildi`
       );
-    } catch {
-      error('Xatolik', 'Statusni yangilab bo‘lmadi');
+    } catch (caught) {
+      error('Xatolik', getSaveErrorMessage(caught));
+    } finally {
+      setUpdatingTeacherStatus(false);
     }
   };
 
-  const handleDeleteTeacher = async (id: string) => {
+  const handleDeactivateTeacher = async (id: string) => {
+    setUpdatingTeacherStatus(true);
     try {
-      await DirectorService.deleteTeacher(id);
+      await DirectorService.deactivateTeacher(id);
       setConfirmDialog({ isOpen: false, type: 'delete', teacher: null });
-      loadTeachers();
-      success('O‘chirildi', 'Ustoz tizimdan o‘chirib tashlandi');
-    } catch {
-      error('Xatolik', 'O‘chirishda xatolik yuz berdi');
+      await loadTeachers();
+      success('Tizimdan chiqarildi', 'Ustoz tizimga kira olmaydi; uning tarixiy ma’lumotlari saqlanadi.');
+    } catch (caught) {
+      error('Xatolik', getSaveErrorMessage(caught));
+    } finally {
+      setUpdatingTeacherStatus(false);
     }
   };
 
@@ -1101,7 +1108,7 @@ export const TeachersPage: React.FC = () => {
         onConfirm={() => {
           if (!confirmDialog.teacher) return;
           if (confirmDialog.type === 'delete') {
-            handleDeleteTeacher(confirmDialog.teacher.id);
+            handleDeactivateTeacher(confirmDialog.teacher.id);
           } else if (confirmDialog.type === 'block') {
             handleStatusChange(confirmDialog.teacher, 'blocked');
           } else if (confirmDialog.type === 'activate') {
@@ -1117,16 +1124,17 @@ export const TeachersPage: React.FC = () => {
         }
         message={
           confirmDialog.type === 'delete'
-            ? `${confirmDialog.teacher?.fullName} tizimdan to‘liq o‘chiriladi. Bu amalni qaytarib bo‘lmaydi!`
+            ? `${confirmDialog.teacher?.fullName} tizimga kira olmaydi. Bog‘liq guruh va darslar saqlanib qoladi, ustozni keyin yana faollashtirish mumkin.`
             : confirmDialog.type === 'block'
             ? `${confirmDialog.teacher?.fullName} profili vaqtincha bloklanadi va guruhlaridagi darslar to‘xtatiladi.`
             : `${confirmDialog.teacher?.fullName} profili faollashtiriladi va tizimga kirish huquqi tiklanadi.`
         }
         confirmText={
-          confirmDialog.type === 'delete' ? "O'chirish" : confirmDialog.type === 'block' ? 'Bloklash' : 'Faollashtirish'
+          confirmDialog.type === 'delete' ? 'Tizimdan chiqarish' : confirmDialog.type === 'block' ? 'Bloklash' : 'Faollashtirish'
         }
         variant={confirmDialog.type === 'activate' ? 'success' : confirmDialog.type === 'block' ? 'warning' : 'danger'}
         icon={confirmDialog.type === 'activate' ? CheckCircle2 : confirmDialog.type === 'block' ? Ban : Trash2}
+        isLoading={updatingTeacherStatus}
       />
     </div>
   );

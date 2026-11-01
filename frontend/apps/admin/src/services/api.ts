@@ -228,6 +228,12 @@ class ApiService {
     return this.request<any>(`/students/${id}/${suffix}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
+  async deactivateTeacher(id: string): Promise<User> {
+    return this.request<User>(`/students/${id}/deactivate/?role=teacher`, {
+      method: 'POST',
+    });
+  }
+
   async createTeacher(payload: { first_name: string; last_name: string; username: string; phone?: string; password: string; confirm_password: string }): Promise<User> {
     return this.request<User>('/students/', { method: 'POST', body: JSON.stringify({ role: 'teacher', ...payload }) });
   }
