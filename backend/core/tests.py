@@ -192,6 +192,35 @@ class DomainTestCase(TestCase):
             ).exists()
         )
 
+    def test_student_creation_rejects_group_from_another_course(self):
+        other_course = Course.objects.create(
+            name="Science",
+            duration_months=4,
+            monthly_fee=Decimal("300000"),
+        )
+        other_group = TeachingGroup.objects.create(
+            name="Science A",
+            course=other_course,
+            teacher=self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "first_name": "Invalid",
+                "last_name": "Enrollment",
+                "course": self.course.pk,
+                "group": other_group.pk,
+                "monthly_fee": "250000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("group", response.data)
+        self.assertFalse(User.objects.filter(first_name="Invalid").exists())
+
     def test_director_can_deactivate_teacher_without_deleting_related_records(self):
         self.login(self.director)
 

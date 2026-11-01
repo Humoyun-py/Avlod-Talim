@@ -153,6 +153,7 @@ export const StudentsPage: React.FC = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const availableGroups = groups.filter(group => group.courseId === formData.courseId);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -176,7 +177,11 @@ export const StudentsPage: React.FC = () => {
     }
 
     const selectedCourse = courses.find(c => c.id === formData.courseId);
-    const selectedGroup = groups.find(g => g.id === formData.groupId);
+    const selectedGroup = availableGroups.find(g => g.id === formData.groupId);
+    if (!selectedCourse || !selectedGroup) {
+      error('Kurs va guruhni tanlang', 'Tanlangan kursga tegishli faol guruhni tanlang');
+      return;
+    }
 
     setCreatingStudent(true);
     try {
@@ -745,14 +750,15 @@ export const StudentsPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Kursni tanlang (ixtiyoriy)
+                Kursni tanlang *
               </label>
               <select
+                required
                 value={formData.courseId}
-                onChange={e => setFormData({ ...formData, courseId: e.target.value })}
+                onChange={e => setFormData({ ...formData, courseId: e.target.value, groupId: '' })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Tanlanmagan</option>
+                <option value="">Kursni tanlang</option>
                 {courses.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -761,15 +767,16 @@ export const StudentsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Guruhni tanlang
+                Guruhni tanlang *
               </label>
               <select
+                required
                 value={formData.groupId}
                 onChange={e => setFormData({ ...formData, groupId: e.target.value })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Bosh (Guruhsiz)</option>
-                {groups.map(g => (
+                <option value="">Guruhni tanlang</option>
+                {availableGroups.map(g => (
                   <option key={g.id} value={g.id}>{g.name} ({g.teacherName})</option>
                 ))}
               </select>
