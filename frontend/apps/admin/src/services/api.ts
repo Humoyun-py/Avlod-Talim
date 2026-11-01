@@ -7,8 +7,10 @@ import {
   Payment,
   ShopProduct,
   ShopOrder,
+  ShopCategory,
   NotificationItem,
   DashboardData,
+  MonthlyReportData,
   StudentCredentials,
 } from '../types';
 
@@ -19,8 +21,8 @@ class ApiService {
   private refreshTokenVal: string | null = null;
 
   constructor() {
-    this.accessToken = sessionStorage.getItem('avlod_access_token');
-    this.refreshTokenVal = sessionStorage.getItem('avlod_refresh_token');
+    this.accessToken = sessionStorage.getItem('avlod_access_token') || localStorage.getItem('avlod_access_token');
+    this.refreshTokenVal = sessionStorage.getItem('avlod_refresh_token') || localStorage.getItem('avlod_refresh_token');
   }
 
   public setTokens(access: string, refresh: string) {
@@ -35,6 +37,8 @@ class ApiService {
     this.refreshTokenVal = null;
     sessionStorage.removeItem('avlod_access_token');
     sessionStorage.removeItem('avlod_refresh_token');
+    localStorage.removeItem('avlod_access_token');
+    localStorage.removeItem('avlod_refresh_token');
   }
 
   public getAccessToken(): string | null {
@@ -43,6 +47,14 @@ class ApiService {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE}${endpoint}`;
+    this.accessToken =
+      sessionStorage.getItem('avlod_access_token') ||
+      localStorage.getItem('avlod_access_token') ||
+      this.accessToken;
+    this.refreshTokenVal =
+      sessionStorage.getItem('avlod_refresh_token') ||
+      localStorage.getItem('avlod_refresh_token') ||
+      this.refreshTokenVal;
     const headers: Record<string, string> = {
       ...(options.headers as Record<string, string>),
     };
@@ -78,6 +90,10 @@ class ApiService {
       error.status = response.status;
       error.data = errorData;
       throw error;
+    }
+
+    if (response.status === 204) {
+      return undefined as T;
     }
 
     return response.json();
@@ -153,6 +169,31 @@ class ApiService {
     return this.request<DashboardData>('/dashboard/');
   }
 
+  async getMonthlyReport(params: {
+    month: number;
+    year: number;
+    teacher?: string;
+    course?: string;
+    group?: string;
+  }): Promise<MonthlyReportData> {
+    const query = new URLSearchParams({ month: String(params.month), year: String(params.year) });
+    if (params.teacher && params.teacher !== 'all') query.set('teacher', params.teacher);
+    if (params.course && params.course !== 'all') query.set('course', params.course);
+    if (params.group && params.group !== 'all') query.set('group', params.group);
+    return this.request<MonthlyReportData>(`/reports/monthly/?${query.toString()}`);
+  }
+
+  async getOrganizationSettings(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/settings/');
+  }
+
+  async updateOrganizationSettings(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/settings/', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  }
+
   // ---------------- COURSES ----------------
   async getCourses(params?: { search?: string; status?: string }): Promise<{ count: number; results: Course[] }> {
     const query = new URLSearchParams();
@@ -180,6 +221,10 @@ class ApiService {
     });
   }
 
+  async deleteCourse(id: string): Promise<void> {
+    await this.request<void>(`/courses/${id}/`, { method: 'DELETE' });
+  }
+
   // ---------------- TEACHERS ----------------
   async getTeachers(): Promise<{ count: number; results: Teacher[] }> {
     const response = await this.request<{ count: number; results: any[] }>('/students/?role=teacher');
@@ -189,6 +234,10 @@ class ApiService {
   async updateUser(id: string, payload: Record<string, unknown>, role?: 'teacher' | 'student'): Promise<any> {
     const suffix = role ? `?role=${role}` : '';
     return this.request<any>(`/students/${id}/${suffix}`, { method: 'PATCH', body: JSON.stringify(payload) });
+  }
+
+  async deleteUser(id: string, role: 'teacher' | 'student'): Promise<void> {
+    await this.request<void>(`/students/${id}/?role=${role}`, { method: 'DELETE' });
   }
 
   async createTeacher(payload: { first_name: string; last_name: string; username: string; phone?: string; password: string; confirm_password: string }): Promise<User> {
@@ -299,6 +348,10 @@ class ApiService {
     return { ...group, course_id: group.course, teacher_id: group.teacher };
   }
 
+  async deleteGroup(id: string): Promise<void> {
+    await this.request<void>(`/groups/${id}/`, { method: 'DELETE' });
+  }
+
   async addStudentsToGroup(groupId: string, studentIds: string[]): Promise<{ group_id: string; enrolled_count: number; detail: string }> {
     return this.request<{ group_id: string; enrolled_count: number; detail: string }>('/groups/enrollments/', { method: 'POST', body: JSON.stringify({ group: Number(groupId), student_ids: studentIds.map(Number) }) });
   }
@@ -360,18 +413,31 @@ class ApiService {
   async createProduct(payload: Partial<ShopProduct>): Promise<ShopProduct> {
     const data = { ...payload, active: (payload as any).is_active, coin_price: (payload as any).price_coins, stock: (payload as any).stock_quantity };
     delete (data as any).is_active; delete (data as any).price_coins; delete (data as any).stock_quantity;
-    return this.request<ShopProduct>('/shop/products/', {
+    const created = await this.request<any>('/shop/products/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return { ...created, image_url: created.image_data || created.image || '', stock_quantity: created.stock, is_active: created.active, coin_price: created.coin_price };
   }
 
   async updateProduct(id: string, payload: Partial<ShopProduct>): Promise<ShopProduct> {
     const data = { ...payload, active: (payload as any).is_active, coin_price: (payload as any).price_coins, stock: (payload as any).stock_quantity };
     delete (data as any).is_active; delete (data as any).price_coins; delete (data as any).stock_quantity;
-    return this.request<ShopProduct>(`/shop/products/${id}/`, {
+    const updated = await this.request<any>(`/shop/products/${id}/`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+    return { ...updated, image_url: updated.image_data || updated.image || '', stock_quantity: updated.stock, is_active: updated.active, coin_price: updated.coin_price };
+  }
+
+  async getShopCategories(): Promise<{ count: number; results: ShopCategory[] }> {
+    return this.request<{ count: number; results: ShopCategory[] }>('/shop/categories/');
+  }
+
+  async createShopCategory(name: string): Promise<ShopCategory> {
+    return this.request<ShopCategory>('/shop/categories/', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
     });
   }
 
@@ -384,7 +450,22 @@ class ApiService {
   }
 
   async updateOrderStatus(id: string, status: string, admin_notes?: string): Promise<ShopOrder> {
-    throw new Error('Order status changes are not implemented by the backend; this endpoint is read-only.');
+    const backendStatus = ({ accepted: 'approved', completed: 'fulfilled' } as Record<string, string>)[status.toLowerCase()] || status.toLowerCase();
+    const updated = await this.request<any>(`/shop/orders/${id}/status/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: backendStatus, admin_notes }),
+    });
+    return {
+      ...updated,
+      student_id: String(updated.student),
+      student_name: updated.student_name || '',
+      product_id: String(updated.product),
+      product_name: updated.product_name || '',
+      total_coins: updated.unit_price * updated.quantity,
+      order_number: String(updated.id),
+      order_date: updated.created_at,
+      status: ({ pending: 'pending', approved: 'processing', rejected: 'rejected', fulfilled: 'completed' } as Record<string, string>)[updated.status] as ShopOrder['status'],
+    };
   }
 
   // ---------------- NOTIFICATIONS ----------------

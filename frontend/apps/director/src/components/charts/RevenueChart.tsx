@@ -1,25 +1,31 @@
 import React, { useState } from 'react';
-import { MONTHLY_REVENUE_CHART_DATA } from '../../data/mockData';
-import { ArrowUpRight, TrendingUp } from 'lucide-react';
+import { TrendingUp } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 
-export const RevenueChart: React.FC = () => {
+interface RevenuePoint {
+  year: number;
+  month: number;
+  label: string;
+  revenue: number;
+}
+
+export const RevenueChart: React.FC<{ data: RevenuePoint[] }> = ({ data: allData }) => {
   const { t } = useLanguage();
   const [activeRange, setActiveRange] = useState<'all' | '6m'>('all');
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
 
-  const data = activeRange === '6m' ? MONTHLY_REVENUE_CHART_DATA.slice(-6) : MONTHLY_REVENUE_CHART_DATA;
+  const data = activeRange === '6m' ? allData.slice(-6) : allData;
 
-  const maxRevenue = Math.max(...data.map(d => d.revenue)) * 1.15;
-  const minRevenue = 100000000;
+  const maxRevenue = Math.max(1, ...data.map(d => d.revenue)) * 1.15;
+  const minRevenue = Math.min(0, ...data.map(d => d.revenue));
 
   const svgWidth = 640;
   const svgHeight = 220;
   const paddingX = 40;
   const paddingY = 25;
 
-  const getX = (index: number) => paddingX + (index / (data.length - 1)) * (svgWidth - paddingX * 2);
-  const getY = (val: number) => svgHeight - paddingY - ((val - minRevenue) / (maxRevenue - minRevenue)) * (svgHeight - paddingY * 2);
+  const getX = (index: number) => paddingX + (index / Math.max(1, data.length - 1)) * (svgWidth - paddingX * 2);
+  const getY = (val: number) => svgHeight - paddingY - ((val - minRevenue) / Math.max(1, maxRevenue - minRevenue)) * (svgHeight - paddingY * 2);
 
   // Generate smooth line path
   const points = data.map((d, i) => `${getX(i)},${getY(d.revenue)}`);
@@ -159,17 +165,9 @@ export const RevenueChart: React.FC = () => {
           <div
             className="absolute top-2 right-4 bg-gray-900 text-white p-3 rounded-xl shadow-xl text-xs z-20 pointer-events-none animate-in fade-in zoom-in-95 duration-100"
           >
-            <div className="font-bold text-gray-200">
-              {data[hoveredPoint].month} oyi tushumi
-            </div>
+            <div className="font-bold text-gray-200">{data[hoveredPoint].label} {data[hoveredPoint].year}</div>
             <div className="text-base font-extrabold text-[#9F8EFF] mt-0.5">
               {(data[hoveredPoint].revenue).toLocaleString()} so‘m
-            </div>
-            <div className="text-[10px] text-gray-400 mt-1 flex items-center justify-between gap-3">
-              <span>Faol talabalar: {data[hoveredPoint].students} ta</span>
-              <span className="text-emerald-400 flex items-center">
-                <ArrowUpRight className="w-3 h-3" /> +12.4%
-              </span>
             </div>
           </div>
         )}
@@ -181,7 +179,7 @@ export const RevenueChart: React.FC = () => {
           <span className="font-medium text-gray-700">Umumiy to‘lovlar (UZS)</span>
         </div>
         <div className="font-semibold text-gray-900">
-          Shu oy (Oktyabr): <span className="text-[#5C42FD]">284,000,000 so‘m</span>
+          {data.at(-1)?.label || '—'}: <span className="text-[#5C42FD]">{(data.at(-1)?.revenue || 0).toLocaleString()} so‘m</span>
         </div>
       </div>
     </div>

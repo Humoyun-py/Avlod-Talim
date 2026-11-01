@@ -29,6 +29,11 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick, onLogoutClick }) =>
   const navigate = useNavigate();
   const { language, setLanguage, t } = useLanguage();
   const { user } = useAuth();
+  const displayName = user?.username || user?.fullName || 'Director';
+  const nameParts = displayName.trim().split(/\s+/).filter(Boolean);
+  const initials = nameParts.length > 1
+    ? nameParts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+    : displayName.slice(0, 2).toUpperCase();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [unreadCount, setUnreadCount] = useState(3);
@@ -261,11 +266,11 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick, onLogoutClick }) =>
             className="flex items-center gap-2.5 p-1 sm:px-2 sm:py-1 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
           >
             <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#5C42FD] to-[#806BFE] text-white flex items-center justify-center font-bold text-xs shadow-xs">
-              SR
+              {initials}
             </div>
             <div className="hidden md:flex flex-col text-left">
               <span className="text-xs font-bold text-gray-900 leading-tight">
-                Sardor Rahmonov
+                {displayName}
               </span>
               <span className="text-[10px] text-[#5C42FD] font-semibold flex items-center gap-1">
                 <Shield className="w-2.5 h-2.5" /> {t('topbar.role')}
@@ -277,8 +282,8 @@ export const Topbar: React.FC<TopbarProps> = ({ onMenuClick, onLogoutClick }) =>
           {showUserDropdown && (
             <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-2xl border border-[#E9EAF3] py-2 z-50 animate-in fade-in zoom-in-95 duration-150">
               <div className="px-4 py-2 border-b border-gray-100">
-                <p className="text-xs font-bold text-gray-900">Sardor Rahmonov</p>
-                <p className="text-[11px] text-gray-500">director@avlodtalim.uz</p>
+                <p className="text-xs font-bold text-gray-900">{displayName}</p>
+                <p className="text-[11px] text-gray-500">{user?.email || user?.username}</p>
                 <div className="mt-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-50 text-[#5C42FD] text-[10px] font-bold">
                   {t('topbar.chief_director')}
                 </div>

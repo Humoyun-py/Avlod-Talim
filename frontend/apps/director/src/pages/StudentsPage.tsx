@@ -43,6 +43,8 @@ export const StudentsPage: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingStudent, setDeletingStudent] = useState(false);
+  const [creatingStudent, setCreatingStudent] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -151,6 +153,7 @@ export const StudentsPage: React.FC = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+  const availableGroups = groups.filter(group => group.courseId === formData.courseId);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -162,6 +165,7 @@ export const StudentsPage: React.FC = () => {
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingStudent) return;
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       error('Xatolik', 'Ism va familiya kiritilishi shart');
       return;
@@ -173,8 +177,13 @@ export const StudentsPage: React.FC = () => {
     }
 
     const selectedCourse = courses.find(c => c.id === formData.courseId);
-    const selectedGroup = groups.find(g => g.id === formData.groupId);
+    const selectedGroup = availableGroups.find(g => g.id === formData.groupId);
+    if (!selectedCourse || !selectedGroup) {
+      error('Kurs va guruhni tanlang', 'Tanlangan kursga tegishli faol guruhni tanlang');
+      return;
+    }
 
+    setCreatingStudent(true);
     try {
       const result = await DirectorService.createStudent({
         firstName: formData.firstName.trim(),
@@ -208,8 +217,19 @@ export const StudentsPage: React.FC = () => {
       });
       setPhoneRaw('');
       loadData();
-    } catch (err: any) {
-      error('Xatolik', err.message || 'Talaba qo‘shishda xatolik yuz berdi');
+    } catch (caught) {
+      const requestError = caught as { message?: string; data?: unknown };
+      const responseMessage = typeof requestError.data === 'object' && requestError.data !== null
+        ? Object.values(requestError.data).flatMap(value => Array.isArray(value) ? value : [value]).find(value => typeof value === 'string')
+        : undefined;
+      error(
+        'Xatolik',
+        (typeof responseMessage === 'string' && responseMessage) ||
+          requestError.message ||
+          'Talaba qo‘shishda xatolik yuz berdi'
+      );
+    } finally {
+      setCreatingStudent(false);
     }
   };
 
@@ -316,13 +336,16 @@ export const StudentsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    setDeletingStudent(true);
     try {
       await DirectorService.deleteStudent(id);
       setDeleteConfirm({ isOpen: false, student: null });
-      loadData();
-      success('O‘chirildi', 'O‘quvchi tizimdan muvaffaqiyatli o‘chirildi');
-    } catch {
-      error('Xatolik', 'O‘chirishda xatolik yuz berdi');
+      await loadData();
+      success('O‘chirildi', 'O‘quvchi va unga tegishli yozuvlar bazadan butunlay o‘chirildi.');
+    } catch (caught) {
+      error('Xatolik', caught instanceof Error ? caught.message : 'O‘quvchini o‘chirishda xatolik yuz berdi');
+    } finally {
+      setDeletingStudent(false);
     }
   };
 
@@ -727,14 +750,15 @@ export const StudentsPage: React.FC = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Kursni tanlang (ixtiyoriy)
+                Kursni tanlang *
               </label>
               <select
+                required
                 value={formData.courseId}
-                onChange={e => setFormData({ ...formData, courseId: e.target.value })}
+                onChange={e => setFormData({ ...formData, courseId: e.target.value, groupId: '' })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Tanlanmagan</option>
+                <option value="">Kursni tanlang</option>
                 {courses.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
@@ -743,15 +767,16 @@ export const StudentsPage: React.FC = () => {
 
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5">
-                Guruhni tanlang
+                Guruhni tanlang *
               </label>
               <select
+                required
                 value={formData.groupId}
                 onChange={e => setFormData({ ...formData, groupId: e.target.value })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Bosh (Guruhsiz)</option>
-                {groups.map(g => (
+                <option value="">Guruhni tanlang</option>
+                {availableGroups.map(g => (
                   <option key={g.id} value={g.id}>{g.name} ({g.teacherName})</option>
                 ))}
               </select>
@@ -779,16 +804,18 @@ export const StudentsPage: React.FC = () => {
           <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100">
             <button
               type="button"
+              disabled={creatingStudent}
               onClick={() => setAddModalOpen(false)}
-              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Bekor qilish
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 text-xs font-bold text-white bg-[#5C42FD] hover:bg-[#4d33eb] rounded-xl shadow-xs transition-colors cursor-pointer"
+              disabled={creatingStudent}
+              className="px-5 py-2.5 text-xs font-bold text-white bg-[#5C42FD] hover:bg-[#4d33eb] rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Saqlash va Login yaratish
+              {creatingStudent ? 'Saqlanmoqda...' : 'Saqlash va Login yaratish'}
             </button>
           </div>
         </form>
@@ -1053,6 +1080,7 @@ export const StudentsPage: React.FC = () => {
         message={`${deleteConfirm.student?.fullName} tizimdan to‘liq o‘chiriladi. Ushbu amalni qaytarib bo‘lmaydi!`}
         confirmText="O‘chirish"
         variant="danger"
+        isLoading={deletingStudent}
       />
 
       {/* AWARD COINS MODAL */}

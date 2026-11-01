@@ -446,7 +446,6 @@ export const StudentShopPage: React.FC = () => {
                 Bekor qilish
               </button>
               <button
-                disabled={purchasing}
                 onClick={() => handlePurchase(purchasePassword)}
                 disabled={purchasing || !purchasePassword}
                 className="px-4 py-2 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 text-white rounded-xl shadow-xs disabled:opacity-50"

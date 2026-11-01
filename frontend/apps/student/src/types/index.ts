@@ -292,5 +292,5 @@ export interface StudentUser {
   preferredContact?: 'Telegram' | 'Phone' | 'Email';
   attendanceRate: number;
   coins: number;
-  paymentStatus: PaymentStatus;
+  paymentStatus: PaymentStatus | 'restricted' | 'unknown';
 }

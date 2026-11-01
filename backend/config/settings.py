@@ -130,26 +130,8 @@ if DEBUG:
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
 else:
-    media_bucket = os.getenv("AWS_STORAGE_BUCKET_NAME", "").strip()
-    if not media_bucket:
-        raise ImproperlyConfigured("AWS_STORAGE_BUCKET_NAME must name a private media bucket in production")
-    if not os.getenv("AWS_ACCESS_KEY_ID", "").strip() or not os.getenv("AWS_SECRET_ACCESS_KEY", "").strip():
-        raise ImproperlyConfigured("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for production media storage")
-    s3_options = {
-        "bucket_name": media_bucket,
-        "region_name": os.getenv("AWS_S3_REGION_NAME", "").strip() or None,
-        "endpoint_url": os.getenv("AWS_S3_ENDPOINT_URL", "").strip() or None,
-        "querystring_auth": True,
-        "querystring_expire": int(os.getenv("AWS_QUERYSTRING_EXPIRE", "300")),
-        "file_overwrite": False,
-        "addressing_style": os.getenv("AWS_S3_ADDRESSING_STYLE", "virtual"),
-        "location": os.getenv("AWS_LOCATION", "uploads").strip("/"),
-    }
     STORAGES = {
-        "default": {
-            "BACKEND": "storages.backends.s3.S3Storage",
-            "OPTIONS": s3_options,
-        },
+        "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
         "staticfiles": {
             "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
         },

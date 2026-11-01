@@ -23,9 +23,9 @@ export const StudentProfilePage: React.FC = () => {
   const { success, error } = useToast();
 
   // The backend currently provides read-only core student profile fields.
-  const bio = student?.bio || '';
-  const telegramUsername = student?.telegramUsername || '';
-  const preferredContact = student?.preferredContact || 'Phone';
+  const [bio, setBio] = useState(student?.bio || '');
+  const [telegramUsername, setTelegramUsername] = useState(student?.telegramUsername || '');
+  const [preferredContact, setPreferredContact] = useState(student?.preferredContact || 'Phone');
   const [savingProfile, setSavingProfile] = useState(false);
 
   // Password change modal / form

@@ -1,10 +1,111 @@
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
+from django.core.management import call_command, CommandError
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework.test import APIClient
 from .models import *
 from .services import *
+
+class BootstrapStaffAccountsTest(TestCase):
+    env_keys = (
+        "BOOTSTRAP_ADMIN_USERNAME",
+        "BOOTSTRAP_ADMIN_EMAIL",
+        "BOOTSTRAP_ADMIN_PASSWORD",
+        "BOOTSTRAP_ADMIN_RESET_PASSWORD",
+        "BOOTSTRAP_DIRECTOR_USERNAME",
+        "BOOTSTRAP_DIRECTOR_EMAIL",
+        "BOOTSTRAP_DIRECTOR_PASSWORD",
+        "BOOTSTRAP_DIRECTOR_RESET_PASSWORD",
+    )
+
+    def set_bootstrap_env(self, values):
+        cleared = dict.fromkeys(self.env_keys, "")
+        with patch.dict("os.environ", {**cleared, **values}, clear=False):
+            call_command("bootstrap_staff_accounts")
+
+    def test_creates_admin_and_director_with_configured_roles(self):
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "A-long-unique-admin-password-2026!",
+            "BOOTSTRAP_DIRECTOR_USERNAME": "initial-director",
+            "BOOTSTRAP_DIRECTOR_EMAIL": "director@example.test",
+            "BOOTSTRAP_DIRECTOR_PASSWORD": "A-long-unique-director-password-2026!",
+        }
+        self.set_bootstrap_env(variables)
+
+        admin = User.objects.get(username="initial-admin")
+        director = User.objects.get(username="initial-director")
+        self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertEqual(director.role, User.Role.DIRECTOR)
+        self.assertTrue(admin.check_password(variables["BOOTSTRAP_ADMIN_PASSWORD"]))
+        self.assertTrue(director.check_password(variables["BOOTSTRAP_DIRECTOR_PASSWORD"]))
+        client = APIClient()
+        for username, password, role in (
+            ("initial-admin", variables["BOOTSTRAP_ADMIN_PASSWORD"], "admin"),
+            ("initial-director", variables["BOOTSTRAP_DIRECTOR_PASSWORD"], "director"),
+        ):
+            response = client.post(
+                "/api/v1/auth/staff/login/",
+                {"username": username, "password": password},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data["user"]["role"], role)
+
+    def test_rerun_does_not_change_existing_password(self):
+        original_password = "Original-long-and-unique-password-2026!"
+        user = User.objects.create_user(
+            username="initial-admin",
+            password=original_password,
+            role=User.Role.ADMIN,
+        )
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "Different-long-and-unique-password-2026!",
+        }
+        self.set_bootstrap_env(variables)
+
+        user.refresh_from_db()
+        self.assertTrue(user.check_password(original_password))
+        self.assertFalse(user.check_password(variables["BOOTSTRAP_ADMIN_PASSWORD"]))
+
+    def test_explicit_reset_replaces_existing_password_for_the_same_role_account(self):
+        old_password = "Old-long-unique-director-password-2026!"
+        new_password = "Brand-new-unique-director-password-2026!"
+        user = User.objects.create_user(
+            username="existing-director",
+            password=old_password,
+            email="director@example.test",
+            role=User.Role.DIRECTOR,
+        )
+        self.set_bootstrap_env(
+            {
+                "BOOTSTRAP_DIRECTOR_USERNAME": "existing-director",
+                "BOOTSTRAP_DIRECTOR_EMAIL": "director@example.test",
+                "BOOTSTRAP_DIRECTOR_PASSWORD": new_password,
+                "BOOTSTRAP_DIRECTOR_RESET_PASSWORD": "true",
+            }
+        )
+
+        user.refresh_from_db()
+        self.assertFalse(user.check_password(old_password))
+        self.assertTrue(user.check_password(new_password))
+
+    def test_rejects_partial_configuration_and_existing_wrong_role(self):
+        with self.assertRaises(CommandError):
+            self.set_bootstrap_env({"BOOTSTRAP_ADMIN_USERNAME": "initial-admin"})
+
+        User.objects.create_user(username="initial-admin", password="not-used", role=User.Role.STUDENT)
+        variables = {
+            "BOOTSTRAP_ADMIN_USERNAME": "initial-admin",
+            "BOOTSTRAP_ADMIN_EMAIL": "admin@example.test",
+            "BOOTSTRAP_ADMIN_PASSWORD": "A-long-unique-admin-password-2026!",
+        }
+        with self.assertRaises(CommandError):
+            self.set_bootstrap_env(variables)
 
 @override_settings(SECURE_SSL_REDIRECT=False)
 class DomainTestCase(TestCase):
@@ -21,6 +122,290 @@ class DomainTestCase(TestCase):
 
     def login(self, user):
         self.client.force_authenticate(user)
+
+    def test_director_cannot_create_teacher_with_username_used_by_any_account(self):
+        self.login(self.director)
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "role": "teacher",
+                "first_name": "New",
+                "last_name": "Teacher",
+                "username": self.student.username.upper(),
+                "password": "Teacher-long-and-unique-2026!",
+                "confirm_password": "Teacher-long-and-unique-2026!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("already in use", str(response.data["username"]))
+        self.assertFalse(User.objects.filter(username="new-teacher").exists())
+
+    def test_director_can_create_teacher(self):
+        self.login(self.director)
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "role": "teacher",
+                "first_name": "New",
+                "last_name": "Teacher",
+                "username": "new-teacher",
+                "password": "Teacher-long-and-unique-2026!",
+                "confirm_password": "Teacher-long-and-unique-2026!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        teacher = User.objects.get(username="new-teacher")
+        self.assertEqual(teacher.role, User.Role.TEACHER)
+        self.assertTrue(teacher.check_password("Teacher-long-and-unique-2026!"))
+
+    def test_director_can_create_student_with_group_and_monthly_fee(self):
+        self.login(self.director)
+
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "first_name": "New",
+                "last_name": "Student",
+                "phone": "+998 90 123 45 67",
+                "course": self.course.pk,
+                "group": self.group.pk,
+                "monthly_fee": "250000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        student = User.objects.get(pk=response.data["id"])
+        self.assertEqual(student.role, User.Role.STUDENT)
+        self.assertEqual(len(response.data["student_id"]), 8)
+        self.assertTrue(response.data["initial_password"])
+        self.assertTrue(
+            GroupEnrollment.objects.filter(
+                student=student,
+                group=self.group,
+                monthly_fee=Decimal("250000"),
+                active=True,
+            ).exists()
+        )
+
+    def test_student_creation_rejects_group_from_another_course(self):
+        other_course = Course.objects.create(
+            name="Science",
+            duration_months=4,
+            monthly_fee=Decimal("300000"),
+        )
+        other_group = TeachingGroup.objects.create(
+            name="Science A",
+            course=other_course,
+            teacher=self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "first_name": "Invalid",
+                "last_name": "Enrollment",
+                "course": self.course.pk,
+                "group": other_group.pk,
+                "monthly_fee": "250000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("group", response.data)
+        self.assertFalse(User.objects.filter(first_name="Invalid").exists())
+
+    def test_director_can_deactivate_teacher_without_deleting_related_records(self):
+        self.login(self.director)
+
+        response = self.client.post(
+            f"/api/v1/students/{self.teacher.pk}/deactivate/?role=teacher"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.teacher.refresh_from_db()
+        self.assertFalse(self.teacher.is_active)
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk, teacher=self.teacher).exists())
+        self.assertTrue(AuditLog.objects.filter(action="user.deactivated", object_id=str(self.teacher.pk)).exists())
+
+    def test_director_can_permanently_delete_student_and_related_records(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Student history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        TuitionPeriod.objects.create(
+            student=self.student,
+            enrollment=self.enrollment,
+            year=date.today().year,
+            month=date.today().month,
+            due_date=date.today(),
+            amount_due=Decimal("300000"),
+        )
+        payment = register_payment(
+            self.student, Decimal("100000"), "cash", self.admin, "delete-student-payment"
+        )
+        award_coins(self.student, 30, self.teacher, "award", "delete-student-coins")
+        product = ShopProduct.objects.create(name="Delete student product", coin_price=20, stock=1)
+        purchase_product(self.student, product.pk)
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/students/{self.student.pk}/?role=student")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.student.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(TuitionPeriod.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(TuitionPayment.objects.filter(pk=payment.pk).exists())
+        self.assertFalse(FinancialTransaction.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(CoinTransaction.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(ShopOrder.objects.filter(student_id=self.student.pk).exists())
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertTrue(Lesson.objects.filter(pk=lesson.pk).exists())
+
+    def test_director_can_permanently_delete_teacher_and_related_records(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Teacher history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/students/{self.teacher.pk}/?role=teacher")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(lesson_id=lesson.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+
+    def test_director_can_permanently_delete_course_and_group_tree(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Course history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/courses/{self.course.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Course.objects.filter(pk=self.course.pk).exists())
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+
+    def test_director_can_permanently_delete_group_and_learning_history(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Group history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        assignment = Assignment.objects.create(
+            lesson=lesson,
+            title="Group assignment",
+            created_by=self.teacher,
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.student,
+            text="Submission",
+        )
+        quiz = Quiz.objects.create(
+            lesson=lesson,
+            title="Group quiz",
+            created_by=self.teacher,
+        )
+        question = QuizQuestion.objects.create(quiz=quiz, prompt="Question", order=1)
+        option = QuizOption.objects.create(question=question, text="Answer", is_correct=True)
+        attempt = QuizAttempt.objects.create(quiz=quiz, student=self.student)
+        answer = QuizAnswer.objects.create(
+            attempt=attempt,
+            question=question,
+            selected_option=option,
+            is_correct=True,
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/groups/{self.group.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(lesson_id=lesson.pk).exists())
+        self.assertFalse(Assignment.objects.filter(pk=assignment.pk).exists())
+        self.assertFalse(AssignmentSubmission.objects.filter(pk=submission.pk).exists())
+        self.assertFalse(Quiz.objects.filter(pk=quiz.pk).exists())
+        self.assertFalse(QuizQuestion.objects.filter(pk=question.pk).exists())
+        self.assertFalse(QuizOption.objects.filter(pk=option.pk).exists())
+        self.assertFalse(QuizAttempt.objects.filter(pk=attempt.pk).exists())
+        self.assertFalse(QuizAnswer.objects.filter(pk=answer.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+
+    def test_only_director_can_permanently_delete_learning_records(self):
+        self.login(self.admin)
+
+        self.assertEqual(
+            self.client.delete(f"/api/v1/students/{self.student.pk}/?role=student").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/students/{self.teacher.pk}/?role=teacher").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/groups/{self.group.pk}/").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/courses/{self.course.pk}/").status_code,
+            403,
+        )
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
 
     def test_staff_and_student_login_and_student_restriction(self):
         response = self.client.post("/api/v1/auth/staff/login/", {"username": "teacher", "password": "TeacherPass123!"})
@@ -114,6 +499,91 @@ class DomainTestCase(TestCase):
         self.assertEqual(coin_balance(self.student), 10)
         with self.assertRaises(ValueError): purchase_product(self.student, product.pk)
 
+    def test_director_settings_categories_and_monthly_report_use_api_data(self):
+        today = date.today()
+        self.login(self.director)
+
+        settings_response = self.client.patch(
+            "/api/v1/settings/",
+            {"center_name": "Avlod Center", "default_monthly_payment": "450000"},
+            format="json",
+        )
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertEqual(
+            self.client.get("/api/v1/settings/").data["center_name"],
+            "Avlod Center",
+        )
+
+        category_response = self.client.post(
+            "/api/v1/shop/categories/",
+            {"name": "Books"},
+            format="json",
+        )
+        self.assertEqual(category_response.status_code, 201)
+        categories = self.client.get("/api/v1/shop/categories/").data["results"]
+        self.assertIn(category_response.data["id"], {row["id"] for row in categories})
+
+        Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Report lesson",
+            teacher=self.teacher,
+            scheduled_date=today,
+            status=Lesson.Status.COMPLETED,
+        )
+        register_payment(
+            self.student,
+            Decimal("125000"),
+            "cash",
+            self.admin,
+            "report-cash",
+        )
+        report_response = self.client.get(
+            "/api/v1/reports/monthly/",
+            {
+                "month": today.month,
+                "year": today.year,
+                "teacher": self.teacher.pk,
+            },
+        )
+        self.assertEqual(report_response.status_code, 200)
+        self.assertEqual(
+            Decimal(report_response.data["tuition_collected"]),
+            Decimal("125000"),
+        )
+        self.assertEqual(
+            Decimal(report_response.data["teacher_salary"]),
+            Decimal("50000"),
+        )
+        self.assertEqual(report_response.data["students"]["total"], 1)
+
+    def test_director_can_reject_shop_order_and_refund_coins(self):
+        product = ShopProduct.objects.create(name="Book", coin_price=20, stock=1, active=True)
+        award_coins(self.student, 30, self.teacher, "great work", "award-refund")
+        order = purchase_product(self.student, product.pk)
+        self.login(self.director)
+
+        response = self.client.patch(
+            f"/api/v1/shop/orders/{order.pk}/status/",
+            {"status": ShopOrder.Status.REJECTED},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(coin_balance(self.student), 30)
+        product.refresh_from_db()
+        self.assertEqual(product.stock, 1)
+
+    def test_teacher_coin_history_is_limited_to_assigned_students(self):
+        award_coins(self.student, 30, self.teacher, "great work", "award-history-1")
+        self.login(self.teacher)
+        response = self.client.get(f"/api/v1/coins/?student={self.student.pk}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["balance"], 30)
+        self.assertEqual(response.data["transactions"][0]["student_id"], self.student.pk)
+        self.assertEqual(self.client.get(f"/api/v1/coins/?student={self.other_student.pk}").status_code, 403)
+
     def test_quiz_server_scoring_and_taught_topic_gate(self):
         lesson = Lesson.objects.create(course=self.course, group=self.group, number=1, title="Topic", teacher=self.teacher, status="completed")
         topic = LessonTopic.objects.create(lesson=lesson, title="Basics")
@@ -137,6 +607,29 @@ class DomainTestCase(TestCase):
         self.assertEqual(self.client.get("/api/v1/salaries/").status_code, 403)
         self.login(self.director)
         self.assertEqual(self.client.get("/api/v1/salaries/").status_code, 200)
+
+    def test_admin_and_director_dashboard_response_shapes_match(self):
+        expected_keys = {"metrics", "recent_activities", "charts"}
+        expected_metric_keys = {
+            "total_students",
+            "active_students",
+            "total_teachers",
+            "total_groups",
+            "available_courses",
+            "payments_this_month",
+            "outstanding_payments",
+            "pending_payment_verifications",
+            "pending_shop_orders",
+        }
+
+        for user in (self.admin, self.director):
+            with self.subTest(role=user.role):
+                self.login(user)
+                response = self.client.get("/api/v1/dashboard/")
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(set(response.data), expected_keys)
+                self.assertEqual(set(response.data["metrics"]), expected_metric_keys)
 
     def test_assignment_submission_and_teacher_review_permissions(self):
         lesson = Lesson.objects.create(course=self.course, group=self.group, number=1, title="Work", teacher=self.teacher, status="completed")
@@ -164,4 +657,3 @@ class DomainTestCase(TestCase):
         register_payment(self.student, Decimal("100"), "payme", self.admin, "private-pay")
         self.login(self.teacher)
         self.assertEqual(self.client.get("/api/v1/payments/").status_code, 403)
-

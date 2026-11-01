@@ -23,31 +23,43 @@ import { AttendanceChart } from '../components/charts/AttendanceChart';
 import { PaymentStatsChart } from '../components/charts/PaymentStatsChart';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DirectorService } from '../services/mockService';
-import { Payment, ShopOrder, Student, Teacher, Group, TeacherSalaryRecord } from '../types';
+import { DirectorDashboardCharts, Payment, ShopOrder, Student, Teacher, Group, TeacherSalaryRecord } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
+import { useToast } from '../context/ToastContext';
+
+const EMPTY_CHARTS: DirectorDashboardCharts = {
+  monthly_revenue: [],
+  student_registrations: [],
+  attendance: { present: 0, absent: 0, excused: 0, total: 0 },
+  payment_status: { approved: 0, pending: 0, rejected: 0, blocked_students: 0 },
+};
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const { error } = useToast();
+  const displayName = user?.username || user?.fullName || 'Director';
   const [payments, setPayments] = useState<Payment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [orders, setOrders] = useState<ShopOrder[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [salaries, setSalaries] = useState<TeacherSalaryRecord[]>([]);
+  const [charts, setCharts] = useState<DirectorDashboardCharts>(EMPTY_CHARTS);
 
   useEffect(() => {
     const fetchData = async () => {
-      setLoading(true);
       try {
-        const [pay, stu, ord, tch, grp, sal] = await Promise.all([
+        const [pay, stu, ord, tch, grp, sal, chartData] = await Promise.all([
           DirectorService.getPayments(),
           DirectorService.getStudents(),
           DirectorService.getOrders(),
           DirectorService.getTeachers(),
           DirectorService.getGroups(),
-          DirectorService.getSalaries()
+          DirectorService.getSalaries(),
+          DirectorService.getDashboardCharts()
         ]);
         setPayments(pay);
         setStudents(stu);
@@ -55,12 +67,13 @@ export const DashboardPage: React.FC = () => {
         setTeachers(tch);
         setGroups(grp);
         setSalaries(sal);
-      } finally {
-        setLoading(false);
+        setCharts(chartData);
+      } catch {
+        error('Xatolik', 'Dashboard ma’lumotlarini API’dan yuklab bo‘lmadi.');
       }
     };
     fetchData();
-  }, []);
+  }, [error]);
 
   // Dynamic calculations from real records
   const totalStudentsCount = students.length;
@@ -71,15 +84,16 @@ export const DashboardPage: React.FC = () => {
   const activeTeachersCount = teachers.filter(t => t.status === 'active').length;
 
   const totalGroupsCount = groups.length;
-  const activeGroupsCount = groups.length;
+  const activeGroupsCount = groups.filter(group => group.status === 'active').length;
 
   // Monthly Revenue from confirmed payments
+  const currentMonth = new Date().toISOString().slice(0, 7);
   const totalPaidRevenue = payments
-    .filter(p => p.status === 'paid')
+    .filter(p => p.status === 'paid' && p.date.startsWith(currentMonth))
     .reduce((sum, p) => sum + p.amount, 0);
 
   const cashRevenue = payments
-    .filter(p => p.status === 'paid' && p.method === 'Naqd')
+    .filter(p => p.status === 'paid' && p.method === 'Naqd' && p.date.startsWith(currentMonth))
     .reduce((sum, p) => sum + p.amount, 0);
 
   const onlineRevenue = totalPaidRevenue - cashRevenue;
@@ -112,7 +126,7 @@ export const DashboardPage: React.FC = () => {
             {t('dashboard.badge')}
           </span>
           <h2 className="text-xl sm:text-2xl font-black text-gray-900 tracking-tight">
-            {t('dashboard.welcome_prefix')}, Sardor Rahmonov
+            {t('dashboard.welcome_prefix')}, {displayName}
           </h2>
           <p className="text-xs sm:text-sm text-gray-500">
             {t('dashboard.welcome_subtitle')}
@@ -162,7 +176,6 @@ export const DashboardPage: React.FC = () => {
             subtitle={t('dashboard.total_students_sub')}
             icon={GraduationCap}
             accentColor="#5C42FD"
-            trend={{ value: '14.2%', isPositive: true }}
             subStats={[
               { label: t('dashboard.active'), value: activeStudentsCount, highlight: 'emerald' },
               { label: t('dashboard.blocked'), value: blockedStudentsCount, highlight: 'rose' }
@@ -257,14 +270,14 @@ export const DashboardPage: React.FC = () => {
 
       {/* Row 3: Modern Analytics Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <RevenueChart />
-        <StudentsGrowthChart />
+        <RevenueChart data={charts.monthly_revenue} />
+        <StudentsGrowthChart data={charts.student_registrations} totalStudents={totalStudentsCount} />
       </div>
 
       {/* Row 4: Secondary Charts (Attendance & Payment Distribution) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <AttendanceChart />
-        <PaymentStatsChart />
+        <AttendanceChart data={charts.attendance} />
+        <PaymentStatsChart data={charts.payment_status} />
       </div>
 
       {/* Row 5: Recent Activity (Tables) */}

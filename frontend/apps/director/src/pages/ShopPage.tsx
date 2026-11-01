@@ -26,15 +26,6 @@ import { EmptyState } from '../components/common/EmptyState';
 import { useToast } from '../context/ToastContext';
 import { useLanguage } from '../context/LanguageContext';
 
-const DEFAULT_CATEGORIES = [
-  'Kiyim',
-  'Aksessuarlar',
-  'Gadjetlar',
-  'Stikerlar',
-  'Kantselyariya',
-  'Kitoblar'
-];
-
 export const ShopPage: React.FC = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
@@ -45,15 +36,7 @@ export const ShopPage: React.FC = () => {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
   const [pendingOrdersCount, setPendingOrdersCount] = useState<number>(0);
 
-  // Custom Categories saved in localStorage
-  const [customCategories, setCustomCategories] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('avlod_custom_shop_categories');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [categories, setCategories] = useState<string[]>([]);
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -80,40 +63,37 @@ export const ShopPage: React.FC = () => {
 
   // All combined available categories
   const allCategories = useMemo(() => {
-    const set = new Set<string>(DEFAULT_CATEGORIES);
-    customCategories.forEach(c => set.add(c));
+    const set = new Set<string>(categories);
     products.forEach(p => {
       if (p.category && p.category.trim()) set.add(p.category.trim());
     });
     return Array.from(set);
-  }, [customCategories, products]);
+  }, [categories, products]);
 
-  // Persist custom categories
-  const saveCustomCategory = (newCat: string) => {
+  const saveCustomCategory = async (newCat: string) => {
     const trimmed = newCat.trim();
-    if (!trimmed) return;
-    if (!customCategories.includes(trimmed) && !DEFAULT_CATEGORIES.includes(trimmed)) {
-      const updated = [...customCategories, trimmed];
-      setCustomCategories(updated);
-      try {
-        localStorage.setItem('avlod_custom_shop_categories', JSON.stringify(updated));
-      } catch {
-        // ignore
-      }
-    }
+    if (!trimmed) throw new Error('Kategoriya nomi bo‘sh bo‘lishi mumkin emas.');
+    if (categories.some(category => category.toLowerCase() === trimmed.toLowerCase())) return trimmed;
+    const created = await DirectorService.createShopCategory(trimmed);
+    setCategories(prev => [...prev, created.name]);
+    return created.name;
   };
 
-  const handleCreateCategoryInModal = () => {
+  const handleCreateCategoryInModal = async () => {
     const cat = newCategoryInput.trim();
     if (!cat) {
       error('Kategoriya nomi bo‘sh', 'Iltimos, yangi kategoriya nomini yozing');
       return;
     }
-    saveCustomCategory(cat);
-    setFormData(prev => ({ ...prev, category: cat }));
-    setNewCategoryInput('');
-    setIsAddingNewCategory(false);
-    success('Kategoriya qo‘shildi', `"${cat}" kategoriyasi ro‘yxatga kiritildi va tanlandi`);
+    try {
+      const savedCategory = await saveCustomCategory(cat);
+      setFormData(prev => ({ ...prev, category: savedCategory }));
+      setNewCategoryInput('');
+      setIsAddingNewCategory(false);
+      success('Kategoriya qo‘shildi', `"${savedCategory}" kategoriyasi ro‘yxatga kiritildi va tanlandi`);
+    } catch {
+      error('Xatolik', 'Kategoriyani API’da saqlab bo‘lmadi.');
+    }
   };
 
   const loadProducts = async () => {
@@ -121,6 +101,8 @@ export const ShopPage: React.FC = () => {
     try {
       const data = await DirectorService.getProducts();
       setProducts(data);
+      const categoryRows = await DirectorService.getShopCategories();
+      setCategories(categoryRows.map(category => category.name));
     } catch {
       error('Xatolik', 'Do‘kon mahsulotlarini yuklashda xatolik yuz berdi');
     } finally {
@@ -133,7 +115,7 @@ export const ShopPage: React.FC = () => {
       const orders = await DirectorService.getOrders();
       setPendingOrdersCount(orders.filter(o => o.status === 'Pending').length);
     } catch {
-      // ignore
+      error('Xatolik', 'Kutilayotgan buyurtmalarni API’dan yuklab bo‘lmadi.');
     }
   };
 
@@ -206,20 +188,17 @@ export const ShopPage: React.FC = () => {
     let finalCategory = formData.category.trim();
     if (isAddingNewCategory && newCategoryInput.trim()) {
       finalCategory = newCategoryInput.trim();
-      saveCustomCategory(finalCategory);
     }
 
     if (!finalCategory) {
-      finalCategory = 'Boshqa';
-      saveCustomCategory(finalCategory);
-    } else {
-      saveCustomCategory(finalCategory);
+      error('Xatolik', 'Mahsulot kategoriyasini tanlang yoki yangisini yarating.');
+      return;
     }
 
-    const calculatedStatus: Product['status'] =
-      formData.stock === 0 ? 'out_of_stock' : formData.stock <= 5 ? 'low_stock' : 'in_stock';
-
     try {
+      finalCategory = await saveCustomCategory(finalCategory);
+      const calculatedStatus: Product['status'] =
+        formData.stock === 0 ? 'out_of_stock' : formData.stock <= 5 ? 'low_stock' : 'in_stock';
       if (editingProduct) {
         await DirectorService.updateProduct(editingProduct.id, {
           ...formData,

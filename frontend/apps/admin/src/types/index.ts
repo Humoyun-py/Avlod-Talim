@@ -104,6 +104,15 @@ export interface ShopProduct {
   stock_quantity: number;
   is_active: boolean;
   image_url: string;
+  image_data?: string;
+  category?: number | null;
+  category_name?: string;
+  created_at: string;
+}
+
+export interface ShopCategory {
+  id: number;
+  name: string;
   created_at: string;
 }
 
@@ -136,6 +145,7 @@ export interface NotificationItem {
 export interface DashboardMetrics {
   total_students: number;
   active_students: number;
+  total_teachers: number;
   total_groups: number;
   available_courses: number;
   payments_this_month: number;
@@ -156,10 +166,32 @@ export interface DashboardData {
   metrics: DashboardMetrics;
   recent_activities: DashboardActivity[];
   charts: {
-    monthly_revenue: { month: string; amount: number }[];
-    student_registrations: { month: string; count: number }[];
-    payment_methods_breakdown: Record<string, number>;
-    shop_order_status: Record<string, number>;
+    monthly_revenue: { year: number; month: number; label: string; revenue: number }[];
+    student_registrations: { year: number; month: number; label: string; students: number }[];
+    attendance: { present: number; absent: number; excused: number; total: number };
+    payment_status: { approved: number; pending: number; rejected: number; blocked_students: number };
+  };
+}
+
+export interface MonthlyReportData {
+  year: number;
+  month: number;
+  tuition_collected: string;
+  revenue_by_method: Record<string, string>;
+  students: {
+    new: number;
+    active: number;
+    blocked: number;
+    total: number;
+  };
+  teachers: number;
+  teacher_salary: string;
+  groups: number;
+  attendance: {
+    present: number;
+    absent: number;
+    excused: number;
+    total: number;
   };
 }
 

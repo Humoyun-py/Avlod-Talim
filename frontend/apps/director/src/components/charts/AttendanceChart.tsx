@@ -2,12 +2,11 @@ import React from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 
-export const AttendanceChart: React.FC = () => {
+export const AttendanceChart: React.FC<{ data: { present: number; absent: number; excused: number; total: number } }> = ({ data }) => {
   const { t, language } = useLanguage();
-  // 88% Present, 7% Absent, 5% Late
-  const present = 88;
-  const absent = 7;
-  const late = 5;
+  const present = data.total ? Math.round((data.present / data.total) * 100) : 0;
+  const absent = data.total ? Math.round((data.absent / data.total) * 100) : 0;
+  const excused = Math.max(0, 100 - present - absent);
 
   // SVG Donut calculation
   const size = 160;
@@ -17,7 +16,7 @@ export const AttendanceChart: React.FC = () => {
 
   const presentStroke = (present / 100) * circumference;
   const absentStroke = (absent / 100) * circumference;
-  const lateStroke = (late / 100) * circumference;
+  const lateStroke = (excused / 100) * circumference;
 
   const absentOffset = circumference - presentStroke;
   const lateOffset = absentOffset - absentStroke;
@@ -25,7 +24,7 @@ export const AttendanceChart: React.FC = () => {
   const labels = {
     present: language === 'uz' ? 'Darsga kelgan' : language === 'ru' ? 'Присутствовали' : 'Present',
     absent: language === 'uz' ? 'Sababsiz kelmagan' : language === 'ru' ? 'Отсутствовали' : 'Absent',
-    late: language === 'uz' ? 'Kechikkan' : language === 'ru' ? 'Опоздали' : 'Late',
+    late: language === 'uz' ? 'Sababli' : language === 'ru' ? 'Уважительная причина' : 'Excused',
     disciplineLabel: language === 'uz' ? 'O‘rtacha dars intizomi:' : language === 'ru' ? 'Средняя дисциплина:' : 'Average discipline:',
     disciplineValue: language === 'uz' ? 'A’lo (Yuqori barqaror)' : language === 'ru' ? 'Отлично (Высокая)' : 'Excellent (High)',
     attendanceRate: language === 'uz' ? 'Davomat' : language === 'ru' ? 'Посещаемость' : 'Attendance'
@@ -97,7 +96,7 @@ export const AttendanceChart: React.FC = () => {
 
           {/* Center value */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-black text-gray-900">88%</span>
+            <span className="text-2xl font-black text-gray-900">{present}%</span>
             <span className="text-[10px] uppercase font-bold text-gray-400">{labels.attendanceRate}</span>
           </div>
         </div>
@@ -125,14 +124,14 @@ export const AttendanceChart: React.FC = () => {
               <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
               <span className="text-gray-600">{labels.late}</span>
             </div>
-            <span className="font-bold text-gray-900">{late}%</span>
+            <span className="font-bold text-gray-900">{excused}%</span>
           </div>
         </div>
       </div>
 
       <div className="pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
         <span>{labels.disciplineLabel}</span>
-        <span className="font-bold text-emerald-600">{labels.disciplineValue}</span>
+        <span className="font-bold text-emerald-600">{present}%</span>
       </div>
     </div>
   );

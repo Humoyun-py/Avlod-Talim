@@ -34,6 +34,10 @@ class TeacherCreateSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
     confirm_password = serializers.CharField(write_only=True)
     phone = serializers.CharField(required=False, allow_blank=True)
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError("This username is already in use.")
+        return value
     def validate(self, data):
         if data["password"] != data["confirm_password"]:
             raise serializers.ValidationError({"confirm_password": "Passwords do not match"})
@@ -138,9 +142,27 @@ class PaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ["status", "received_by", "reviewed_by", "created_at", "reviewed_at"]
 
 class ProductSerializer(serializers.ModelSerializer):
+    category_name = serializers.CharField(source="category.name", read_only=True)
     class Meta:
         model = ShopProduct
-        fields = "__all__"
+        fields = ["id", "name", "description", "image", "image_data", "category", "category_name", "coin_price", "stock", "active", "created_at"]
+        read_only_fields = ["created_at"]
+
+class ShopCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShopCategory
+        fields = ["id", "name", "created_at"]
+        read_only_fields = ["created_at"]
+
+class OrganizationSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrganizationSettings
+        fields = [
+            "center_name", "logo_url", "primary_color", "payment_deadline_day",
+            "default_monthly_payment", "teacher_salary_percentage",
+            "require_two_factor", "session_timeout_minutes", "allow_cash_receipts",
+        ]
+        read_only_fields = ["primary_color"]
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:

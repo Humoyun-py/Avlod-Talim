@@ -25,6 +25,7 @@ export const CoursesPage: React.FC = () => {
   const { success, error } = useToast();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingCourse, setDeletingCourse] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals
@@ -118,13 +119,16 @@ export const CoursesPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    setDeletingCourse(true);
     try {
       await DirectorService.deleteCourse(id);
       setDeleteConfirm({ isOpen: false, course: null });
-      loadCourses();
-      success('O‘chirildi', 'Kurs o‘chirildi');
-    } catch {
-      error('Xatolik', 'Kursni o‘chirishda xatolik yuz berdi');
+      await loadCourses();
+      success('O‘chirildi', 'Kurs va unga bog‘liq guruhlar hamda darslar bazadan o‘chirildi.');
+    } catch (caught) {
+      error('Xatolik', caught instanceof Error ? caught.message : 'Kursni o‘chirishda xatolik yuz berdi');
+    } finally {
+      setDeletingCourse(false);
     }
   };
 
@@ -380,9 +384,10 @@ export const CoursesPage: React.FC = () => {
           if (deleteConfirm.course) handleDelete(deleteConfirm.course.id);
         }}
         title="Kursni o‘chirish"
-        message={`${deleteConfirm.course?.name} kursi o‘chirilsa, unga bog‘liq yangi guruhlar ochib bo‘lmaydi.`}
-        confirmText="O‘chirish"
+        message={`${deleteConfirm.course?.name} kursi va unga bog‘liq guruh, dars, yozilish hamda davomat yozuvlari bazadan butunlay o‘chiriladi. Bu amalni qaytarib bo‘lmaydi.`}
+        confirmText="Butunlay o‘chirish"
         variant="danger"
+        isLoading={deletingCourse}
       />
     </div>
   );

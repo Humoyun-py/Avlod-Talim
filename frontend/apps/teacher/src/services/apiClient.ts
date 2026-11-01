@@ -3,6 +3,7 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 // Django REST Framework default base URL configuration
 export const API_BASE_URL =
   (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1').replace(/\/$/, '');
+export const LOGIN_TIMEOUT_MS = 90_000;
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
