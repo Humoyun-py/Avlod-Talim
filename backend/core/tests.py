@@ -221,6 +221,26 @@ class DomainTestCase(TestCase):
         self.assertIn("group", response.data)
         self.assertFalse(User.objects.filter(first_name="Invalid").exists())
 
+    def test_student_creation_rejects_inactive_course(self):
+        self.course.active = False
+        self.course.save(update_fields=["active"])
+        self.login(self.director)
+
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "first_name": "Inactive",
+                "last_name": "Course",
+                "course": str(self.course.pk),
+                "group": str(self.group.pk),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIn("course", response.data)
+        self.assertFalse(User.objects.filter(first_name="Inactive").exists())
+
     def test_director_can_deactivate_teacher_without_deleting_related_records(self):
         self.login(self.director)
 
