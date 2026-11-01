@@ -273,9 +273,17 @@ class ApiService {
     monthly_fee?: number;
   }): Promise<{ student: Student; credentials: StudentCredentials }> {
     if (!payload.group_id) throw new Error('Choose a group before creating the student.');
+    const courseId = Number(payload.course_id);
+    const groupId = Number(payload.group_id);
+    if (!Number.isSafeInteger(courseId) || courseId <= 0) {
+      throw new Error('Kurs ID noto‘g‘ri. Sahifani yangilab, kursni qayta tanlang.');
+    }
+    if (!Number.isSafeInteger(groupId) || groupId <= 0) {
+      throw new Error('Guruh ID noto‘g‘ri. Sahifani yangilab, guruhni qayta tanlang.');
+    }
     const result = await this.request<any>('/students/', {
       method: 'POST',
-      body: JSON.stringify({ first_name: payload.first_name, last_name: payload.last_name, phone: payload.phone, course: payload.course_id, group: payload.group_id, monthly_fee: payload.monthly_fee }),
+      body: JSON.stringify({ first_name: payload.first_name, last_name: payload.last_name, phone: payload.phone, course: courseId, group: groupId, monthly_fee: payload.monthly_fee }),
     });
     const { initial_password, ...student } = result;
     return { student: { ...student, full_name: `${student.first_name} ${student.last_name}`.trim() }, credentials: { student_id: student.student_id, initial_password, notice: 'Save these credentials securely; the password will not be shown again.' } };
