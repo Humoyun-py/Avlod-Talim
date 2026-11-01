@@ -162,6 +162,36 @@ class DomainTestCase(TestCase):
         self.assertEqual(teacher.role, User.Role.TEACHER)
         self.assertTrue(teacher.check_password("Teacher-long-and-unique-2026!"))
 
+    def test_director_can_create_student_with_group_and_monthly_fee(self):
+        self.login(self.director)
+
+        response = self.client.post(
+            "/api/v1/students/",
+            {
+                "first_name": "New",
+                "last_name": "Student",
+                "phone": "+998 90 123 45 67",
+                "course": self.course.pk,
+                "group": self.group.pk,
+                "monthly_fee": "250000",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        student = User.objects.get(pk=response.data["id"])
+        self.assertEqual(student.role, User.Role.STUDENT)
+        self.assertEqual(len(response.data["student_id"]), 8)
+        self.assertTrue(response.data["initial_password"])
+        self.assertTrue(
+            GroupEnrollment.objects.filter(
+                student=student,
+                group=self.group,
+                monthly_fee=Decimal("250000"),
+                active=True,
+            ).exists()
+        )
+
     def test_director_can_deactivate_teacher_without_deleting_related_records(self):
         self.login(self.director)
 

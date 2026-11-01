@@ -44,6 +44,7 @@ export const StudentsPage: React.FC = () => {
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingStudent, setDeletingStudent] = useState(false);
+  const [creatingStudent, setCreatingStudent] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -163,6 +164,7 @@ export const StudentsPage: React.FC = () => {
 
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (creatingStudent) return;
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       error('Xatolik', 'Ism va familiya kiritilishi shart');
       return;
@@ -176,6 +178,7 @@ export const StudentsPage: React.FC = () => {
     const selectedCourse = courses.find(c => c.id === formData.courseId);
     const selectedGroup = groups.find(g => g.id === formData.groupId);
 
+    setCreatingStudent(true);
     try {
       const result = await DirectorService.createStudent({
         firstName: formData.firstName.trim(),
@@ -209,8 +212,19 @@ export const StudentsPage: React.FC = () => {
       });
       setPhoneRaw('');
       loadData();
-    } catch (err: any) {
-      error('Xatolik', err.message || 'Talaba qo‘shishda xatolik yuz berdi');
+    } catch (caught) {
+      const requestError = caught as { message?: string; data?: unknown };
+      const responseMessage = typeof requestError.data === 'object' && requestError.data !== null
+        ? Object.values(requestError.data).flatMap(value => Array.isArray(value) ? value : [value]).find(value => typeof value === 'string')
+        : undefined;
+      error(
+        'Xatolik',
+        (typeof responseMessage === 'string' && responseMessage) ||
+          requestError.message ||
+          'Talaba qo‘shishda xatolik yuz berdi'
+      );
+    } finally {
+      setCreatingStudent(false);
     }
   };
 
@@ -783,16 +797,18 @@ export const StudentsPage: React.FC = () => {
           <div className="pt-4 flex items-center justify-end gap-3 border-t border-gray-100">
             <button
               type="button"
+              disabled={creatingStudent}
               onClick={() => setAddModalOpen(false)}
-              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer"
+              className="px-4 py-2.5 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Bekor qilish
             </button>
             <button
               type="submit"
-              className="px-5 py-2.5 text-xs font-bold text-white bg-[#5C42FD] hover:bg-[#4d33eb] rounded-xl shadow-xs transition-colors cursor-pointer"
+              disabled={creatingStudent}
+              className="px-5 py-2.5 text-xs font-bold text-white bg-[#5C42FD] hover:bg-[#4d33eb] rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Saqlash va Login yaratish
+              {creatingStudent ? 'Saqlanmoqda...' : 'Saqlash va Login yaratish'}
             </button>
           </div>
         </form>
