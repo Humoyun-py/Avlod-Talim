@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
 from django.contrib.auth import authenticate
-from django.db import transaction
+from django.db import router, transaction
+from django.db.models.deletion import Collector
 from django.db.models import Sum, Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,6 +19,29 @@ from .models import *
 from .permissions import RolePermission, StaffWritePermission
 from .serializers import *
 from .services import *
+
+@transaction.atomic
+def hard_delete(instance):
+    using = router.db_for_write(instance.__class__, instance=instance)
+    collector = Collector(using=using)
+    collector.collect([instance])
+
+    related_objects = [
+        (model, [obj.pk for obj in objects])
+        for model, objects in collector.data.items()
+    ]
+    related_objects.extend(
+        (queryset.model, list(queryset.values_list("pk", flat=True)))
+        for queryset in collector.fast_deletes
+    )
+    for model, object_ids in related_objects:
+        if object_ids:
+            AuditLog.objects.using(using).filter(
+                object_type=model.__name__,
+                object_id__in=[str(object_id) for object_id in object_ids],
+            ).delete()
+
+    collector.delete()
 
 class LoginThrottle(AnonRateThrottle):
     scope = "login"
@@ -117,6 +141,13 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
         return Response(serializer.data)
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != "director":
+            raise PermissionDenied("Only a Director may permanently delete accounts.")
+        if request.query_params.get("role", "student") not in ("student", "teacher"):
+            raise ValidationError({"role": "Only student or teacher accounts can be deleted here."})
+        hard_delete(self.get_object())
+        return Response(status=status.HTTP_204_NO_CONTENT)
     @action(detail=True, methods=["post"], permission_classes=[RolePermission], url_path="deactivate")
     def deactivate(self, request, pk=None):
         user = self.get_object(); user.is_active = False; user.save(update_fields=["is_active"]); audit(request.user, "user.deactivated", user); return Response(UserSerializer(user).data)
@@ -156,6 +187,11 @@ class CourseViewSet(viewsets.ModelViewSet):
     roles = ("director", "admin", "teacher", "student")
     def get_queryset(self):
         return Course.objects.filter(active=True) if self.request.user.role in ("teacher", "student") else Course.objects.all()
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != "director":
+            raise PermissionDenied("Only a Director may permanently delete courses.")
+        hard_delete(self.get_object())
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class GroupViewSet(viewsets.ModelViewSet):
     serializer_class = GroupSerializer
@@ -183,6 +219,11 @@ class GroupViewSet(viewsets.ModelViewSet):
                 raise ValidationError({"student_ids": "One or more students are invalid"})
             create_enrollment(group, students, self.request.user)
         audit(self.request.user, "group.updated", group)
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != "director":
+            raise PermissionDenied("Only a Director may permanently delete groups.")
+        hard_delete(self.get_object())
+        return Response(status=status.HTTP_204_NO_CONTENT)
     @action(detail=True, methods=["get", "post"])
     def students(self, request, pk=None):
         group = self.get_object()

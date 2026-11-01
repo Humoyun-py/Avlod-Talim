@@ -36,6 +36,7 @@ export const GroupsPage: React.FC = () => {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -180,13 +181,16 @@ export const GroupsPage: React.FC = () => {
   };
 
   const handleDeleteGroup = async (id: string) => {
+    setDeletingGroup(true);
     try {
       await DirectorService.deleteGroup(id);
       setDeleteConfirm({ isOpen: false, group: null });
-      loadData();
-      success('O‘chirildi', 'Guruh muvaffaqiyatli o‘chirildi');
-    } catch {
-      error('Xatolik', 'O‘chirishda xatolik yuz berdi');
+      await loadData();
+      success('O‘chirildi', 'Guruh va unga bog‘liq dars, yozilish hamda davomat yozuvlari bazadan o‘chirildi.');
+    } catch (caught) {
+      error('Xatolik', caught instanceof Error ? caught.message : 'Guruhni o‘chirishda xatolik yuz berdi');
+    } finally {
+      setDeletingGroup(false);
     }
   };
 
@@ -763,9 +767,10 @@ export const GroupsPage: React.FC = () => {
           if (deleteConfirm.group) handleDeleteGroup(deleteConfirm.group.id);
         }}
         title="Guruhni o‘chirish"
-        message={`${deleteConfirm.group?.name} guruhi tizimdan o‘chiriladi. Bu amalni qaytarib bo‘lmaydi!`}
-        confirmText="O‘chirish"
+        message={`${deleteConfirm.group?.name} guruhi va unga bog‘liq dars, yozilish hamda davomat yozuvlari bazadan butunlay o‘chiriladi. Bu amalni qaytarib bo‘lmaydi.`}
+        confirmText="Butunlay o‘chirish"
         variant="danger"
+        isLoading={deletingGroup}
       />
     </div>
   );

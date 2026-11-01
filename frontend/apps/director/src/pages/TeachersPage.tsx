@@ -346,13 +346,13 @@ export const TeachersPage: React.FC = () => {
     }
   };
 
-  const handleDeactivateTeacher = async (id: string) => {
+  const handleDeleteTeacher = async (id: string) => {
     setUpdatingTeacherStatus(true);
     try {
-      await DirectorService.deactivateTeacher(id);
+      await DirectorService.deleteTeacher(id);
       setConfirmDialog({ isOpen: false, type: 'delete', teacher: null });
       await loadTeachers();
-      success('Tizimdan chiqarildi', 'Ustoz tizimga kira olmaydi; uning tarixiy ma’lumotlari saqlanadi.');
+      success('O‘chirildi', 'Ustoz va unga bog‘liq ma’lumotlar bazadan o‘chirildi.');
     } catch (caught) {
       error('Xatolik', getSaveErrorMessage(caught));
     } finally {
@@ -1108,7 +1108,7 @@ export const TeachersPage: React.FC = () => {
         onConfirm={() => {
           if (!confirmDialog.teacher) return;
           if (confirmDialog.type === 'delete') {
-            handleDeactivateTeacher(confirmDialog.teacher.id);
+            handleDeleteTeacher(confirmDialog.teacher.id);
           } else if (confirmDialog.type === 'block') {
             handleStatusChange(confirmDialog.teacher, 'blocked');
           } else if (confirmDialog.type === 'activate') {
@@ -1124,13 +1124,13 @@ export const TeachersPage: React.FC = () => {
         }
         message={
           confirmDialog.type === 'delete'
-            ? `${confirmDialog.teacher?.fullName} tizimga kira olmaydi. Bog‘liq guruh va darslar saqlanib qoladi, ustozni keyin yana faollashtirish mumkin.`
+            ? `${confirmDialog.teacher?.fullName} va unga bog‘liq guruh, dars hamda tarixiy ma’lumotlar bazadan butunlay o‘chiriladi. Bu amalni qaytarib bo‘lmaydi.`
             : confirmDialog.type === 'block'
             ? `${confirmDialog.teacher?.fullName} profili vaqtincha bloklanadi va guruhlaridagi darslar to‘xtatiladi.`
             : `${confirmDialog.teacher?.fullName} profili faollashtiriladi va tizimga kirish huquqi tiklanadi.`
         }
         confirmText={
-          confirmDialog.type === 'delete' ? 'Tizimdan chiqarish' : confirmDialog.type === 'block' ? 'Bloklash' : 'Faollashtirish'
+          confirmDialog.type === 'delete' ? 'Butunlay o‘chirish' : confirmDialog.type === 'block' ? 'Bloklash' : 'Faollashtirish'
         }
         variant={confirmDialog.type === 'activate' ? 'success' : confirmDialog.type === 'block' ? 'warning' : 'danger'}
         icon={confirmDialog.type === 'activate' ? CheckCircle2 : confirmDialog.type === 'block' ? Ban : Trash2}

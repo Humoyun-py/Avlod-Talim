@@ -43,6 +43,7 @@ export const StudentsPage: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingStudent, setDeletingStudent] = useState(false);
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -316,13 +317,16 @@ export const StudentsPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
+    setDeletingStudent(true);
     try {
       await DirectorService.deleteStudent(id);
       setDeleteConfirm({ isOpen: false, student: null });
-      loadData();
-      success('O‘chirildi', 'O‘quvchi tizimdan muvaffaqiyatli o‘chirildi');
-    } catch {
-      error('Xatolik', 'O‘chirishda xatolik yuz berdi');
+      await loadData();
+      success('O‘chirildi', 'O‘quvchi va unga tegishli yozuvlar bazadan butunlay o‘chirildi.');
+    } catch (caught) {
+      error('Xatolik', caught instanceof Error ? caught.message : 'O‘quvchini o‘chirishda xatolik yuz berdi');
+    } finally {
+      setDeletingStudent(false);
     }
   };
 
@@ -1053,6 +1057,7 @@ export const StudentsPage: React.FC = () => {
         message={`${deleteConfirm.student?.fullName} tizimdan to‘liq o‘chiriladi. Ushbu amalni qaytarib bo‘lmaydi!`}
         confirmText="O‘chirish"
         variant="danger"
+        isLoading={deletingStudent}
       />
 
       {/* AWARD COINS MODAL */}

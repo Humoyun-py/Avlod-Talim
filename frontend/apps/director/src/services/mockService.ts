@@ -64,8 +64,8 @@ export const DirectorService = {
     return { ...(await this.getTeachers()).find(t => t.id === id)!, ...updates };
   },
 
-  async deactivateTeacher(id: string): Promise<void> {
-    await api.deactivateTeacher(id);
+  async deleteTeacher(id: string): Promise<void> {
+    await api.deleteUser(id, 'teacher');
   },
 
   // Students
@@ -101,7 +101,7 @@ export const DirectorService = {
   },
 
   async deleteStudent(id: string): Promise<void> {
-    await api.updateUser(id, { is_active: false }, 'student');
+    await api.deleteUser(id, 'student');
   },
 
   async getCoinTransactions(): Promise<CoinTransaction[]> {
@@ -143,7 +143,7 @@ export const DirectorService = {
   },
 
   async deleteGroup(id: string): Promise<void> {
-    await api.updateGroup(id, { active: false } as any);
+    await api.deleteGroup(id);
   },
 
   // Courses
@@ -163,7 +163,7 @@ export const DirectorService = {
   },
 
   async deleteCourse(id: string): Promise<void> {
-    await api.updateCourse(id, { status: 'archived' } as any);
+    await api.deleteCourse(id);
   },
 
   // Payments

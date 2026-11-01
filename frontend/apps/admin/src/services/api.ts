@@ -92,6 +92,10 @@ class ApiService {
       throw error;
     }
 
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     return response.json();
   }
 
@@ -217,6 +221,10 @@ class ApiService {
     });
   }
 
+  async deleteCourse(id: string): Promise<void> {
+    await this.request<void>(`/courses/${id}/`, { method: 'DELETE' });
+  }
+
   // ---------------- TEACHERS ----------------
   async getTeachers(): Promise<{ count: number; results: Teacher[] }> {
     const response = await this.request<{ count: number; results: any[] }>('/students/?role=teacher');
@@ -228,10 +236,8 @@ class ApiService {
     return this.request<any>(`/students/${id}/${suffix}`, { method: 'PATCH', body: JSON.stringify(payload) });
   }
 
-  async deactivateTeacher(id: string): Promise<User> {
-    return this.request<User>(`/students/${id}/deactivate/?role=teacher`, {
-      method: 'POST',
-    });
+  async deleteUser(id: string, role: 'teacher' | 'student'): Promise<void> {
+    await this.request<void>(`/students/${id}/?role=${role}`, { method: 'DELETE' });
   }
 
   async createTeacher(payload: { first_name: string; last_name: string; username: string; phone?: string; password: string; confirm_password: string }): Promise<User> {
@@ -340,6 +346,10 @@ class ApiService {
       body: JSON.stringify(normalized),
     });
     return { ...group, course_id: group.course, teacher_id: group.teacher };
+  }
+
+  async deleteGroup(id: string): Promise<void> {
+    await this.request<void>(`/groups/${id}/`, { method: 'DELETE' });
   }
 
   async addStudentsToGroup(groupId: string, studentIds: string[]): Promise<{ group_id: string; enrolled_count: number; detail: string }> {

@@ -40,8 +40,8 @@ class Course(models.Model):
 
 class TeachingGroup(models.Model):
     name = models.CharField(max_length=120)
-    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name="groups")
-    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="teaching_groups", limit_choices_to={"role": "teacher"})
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="groups")
+    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="teaching_groups", limit_choices_to={"role": "teacher"})
     active = models.BooleanField(default=True)
     start_date = models.DateField(default=timezone.localdate)
     end_date = models.DateField(null=True, blank=True)
@@ -50,8 +50,8 @@ class TeachingGroup(models.Model):
         constraints = [models.UniqueConstraint(fields=["name", "course"], name="uniq_group_course_name")]
 
 class GroupEnrollment(models.Model):
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="enrollments", limit_choices_to={"role": "student"})
-    group = models.ForeignKey(TeachingGroup, on_delete=models.PROTECT, related_name="enrollments")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="enrollments", limit_choices_to={"role": "student"})
+    group = models.ForeignKey(TeachingGroup, on_delete=models.CASCADE, related_name="enrollments")
     monthly_fee = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0"))])
     started_on = models.DateField(default=timezone.localdate)
     ended_on = models.DateField(null=True, blank=True)
@@ -78,15 +78,15 @@ class Lesson(models.Model):
         PLANNED = "planned", "Planned"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
-    course = models.ForeignKey(Course, on_delete=models.PROTECT, related_name="lessons")
-    group = models.ForeignKey(TeachingGroup, on_delete=models.PROTECT, related_name="lessons")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="lessons")
+    group = models.ForeignKey(TeachingGroup, on_delete=models.CASCADE, related_name="lessons")
     month = models.ForeignKey(CourseMonth, null=True, blank=True, on_delete=models.SET_NULL, related_name="lessons")
     number = models.PositiveSmallIntegerField()
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True)
     scheduled_date = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.PLANNED)
-    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="lessons_taught")
+    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lessons_taught")
     is_demo = models.BooleanField(default=False)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["group", "number"], name="uniq_group_lesson_number")]
@@ -104,20 +104,20 @@ class AttendanceRecord(models.Model):
         PRESENT = "present", "Present"
         ABSENT = "absent", "Absent"
         EXCUSED = "excused", "Excused"
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="attendance_records")
-    group = models.ForeignKey(TeachingGroup, on_delete=models.PROTECT, related_name="attendance_records")
-    lesson = models.ForeignKey(Lesson, on_delete=models.PROTECT, related_name="attendance_records")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_records")
+    group = models.ForeignKey(TeachingGroup, on_delete=models.CASCADE, related_name="attendance_records")
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="attendance_records")
     date = models.DateField(default=timezone.localdate)
     status = models.CharField(max_length=8, choices=Status.choices)
-    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="attendance_recorded")
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="attendance_recorded")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["student", "lesson"], name="uniq_attendance_student_lesson")]
 
 class TuitionPeriod(models.Model):
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="tuition_periods")
-    enrollment = models.ForeignKey(GroupEnrollment, on_delete=models.PROTECT, related_name="tuition_periods")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="tuition_periods")
+    enrollment = models.ForeignKey(GroupEnrollment, on_delete=models.CASCADE, related_name="tuition_periods")
     year = models.PositiveSmallIntegerField()
     month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
     due_date = models.DateField()
@@ -137,15 +137,15 @@ class TuitionPayment(models.Model):
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         REVERSED = "reversed", "Reversed"
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="payments")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="payments")
     amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     method = models.CharField(max_length=8, choices=Method.choices)
     status = models.CharField(max_length=10, choices=Status.choices)
     receipt = models.FileField(upload_to="receipts/%Y/%m/", null=True, blank=True)
     reference = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
-    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="payments_received")
-    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="payments_reviewed")
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="payments_received")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="payments_reviewed")
     rejection_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -158,20 +158,20 @@ class FinancialTransaction(models.Model):
         ADJUSTMENT = "adjustment", "Adjustment"
         REVERSAL = "reversal", "Reversal"
         SALARY_PAYMENT = "salary_payment", "Salary payment"
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="financial_transactions")
-    payment = models.OneToOneField(TuitionPayment, null=True, blank=True, on_delete=models.PROTECT, related_name="ledger_transaction")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="financial_transactions")
+    payment = models.OneToOneField(TuitionPayment, null=True, blank=True, on_delete=models.CASCADE, related_name="ledger_transaction")
     kind = models.CharField(max_length=20, choices=Type.choices)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     transaction_date = models.DateField(default=timezone.localdate)
     description = models.CharField(max_length=255, blank=True)
     reference = models.CharField(max_length=120, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="financial_transactions_created")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="financial_transactions_created")
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         indexes = [models.Index(fields=["student", "transaction_date"])]
 
 class TeacherSalaryPeriod(models.Model):
-    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="salary_periods")
+    teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="salary_periods")
     year = models.PositiveSmallIntegerField()
     month = models.PositiveSmallIntegerField(validators=[MinValueValidator(1), MaxValueValidator(12)])
     percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("40.00"))
@@ -184,18 +184,18 @@ class TeacherSalaryPeriod(models.Model):
         constraints = [models.UniqueConstraint(fields=["teacher", "year", "month"], name="uniq_salary_period")]
 
 class TeacherSalaryPayment(models.Model):
-    period = models.ForeignKey(TeacherSalaryPeriod, on_delete=models.PROTECT, related_name="payments")
+    period = models.ForeignKey(TeacherSalaryPeriod, on_delete=models.CASCADE, related_name="payments")
     amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     paid_at = models.DateTimeField(default=timezone.now)
-    paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="salary_payments_made")
+    paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="salary_payments_made")
     reference = models.CharField(max_length=120, blank=True)
 
 class CoinTransaction(models.Model):
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="coin_transactions")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="coin_transactions")
     amount = models.IntegerField()
     reason = models.CharField(max_length=255)
     reference = models.CharField(max_length=120, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="coins_awarded")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="coins_awarded")
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["reference"], condition=~models.Q(reference=""), name="uniq_coin_reference")]
@@ -239,40 +239,40 @@ class ShopOrder(models.Model):
         APPROVED = "approved", "Approved"
         REJECTED = "rejected", "Rejected"
         FULFILLED = "fulfilled", "Fulfilled"
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="shop_orders")
-    product = models.ForeignKey(ShopProduct, on_delete=models.PROTECT, related_name="orders")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="shop_orders")
+    product = models.ForeignKey(ShopProduct, on_delete=models.CASCADE, related_name="orders")
     quantity = models.PositiveSmallIntegerField(default=1, validators=[MinValueValidator(1)])
     unit_price = models.PositiveIntegerField()
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
-    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="shop_orders_decided")
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="shop_orders_decided")
 
 class Assignment(models.Model):
-    lesson = models.ForeignKey(Lesson, on_delete=models.PROTECT, related_name="assignments")
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="assignments")
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True)
     due_at = models.DateTimeField(null=True, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="assignments_created")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignments_created")
     created_at = models.DateTimeField(auto_now_add=True)
 
 class AssignmentSubmission(models.Model):
-    assignment = models.ForeignKey(Assignment, on_delete=models.PROTECT, related_name="submissions")
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="assignment_submissions")
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name="submissions")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_submissions")
     text = models.TextField(blank=True)
     file = models.FileField(upload_to="submissions/", null=True, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
     score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)
-    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="submissions_reviewed")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="submissions_reviewed")
     class Meta:
         constraints = [models.UniqueConstraint(fields=["assignment", "student"], name="uniq_assignment_submission")]
 
 class Quiz(models.Model):
-    lesson = models.ForeignKey(Lesson, on_delete=models.PROTECT, related_name="quizzes")
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="quizzes")
     title = models.CharField(max_length=180)
     pass_percent = models.PositiveSmallIntegerField(default=80, validators=[MinValueValidator(1), MaxValueValidator(100)])
     active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="quizzes_created")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quizzes_created")
 
 class QuizQuestion(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="questions")
@@ -285,8 +285,8 @@ class QuizOption(models.Model):
     is_correct = models.BooleanField(default=False)
 
 class QuizAttempt(models.Model):
-    quiz = models.ForeignKey(Quiz, on_delete=models.PROTECT, related_name="attempts")
-    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="quiz_attempts")
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="attempts")
+    student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="quiz_attempts")
     score_percent = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     passed = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(null=True, blank=True)
@@ -294,8 +294,8 @@ class QuizAttempt(models.Model):
 
 class QuizAnswer(models.Model):
     attempt = models.ForeignKey(QuizAttempt, on_delete=models.CASCADE, related_name="answers")
-    question = models.ForeignKey(QuizQuestion, on_delete=models.PROTECT)
-    selected_option = models.ForeignKey(QuizOption, null=True, blank=True, on_delete=models.PROTECT)
+    question = models.ForeignKey(QuizQuestion, on_delete=models.CASCADE)
+    selected_option = models.ForeignKey(QuizOption, null=True, blank=True, on_delete=models.CASCADE)
     is_correct = models.BooleanField(default=False)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["attempt", "question"], name="uniq_quiz_answer")]
@@ -309,7 +309,7 @@ class Notification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class AuditLog(models.Model):
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="audit_events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="audit_events")
     action = models.CharField(max_length=80)
     object_type = models.CharField(max_length=80)
     object_id = models.CharField(max_length=80)
@@ -321,5 +321,5 @@ class AuditLog(models.Model):
 class SystemSetting(models.Model):
     key = models.CharField(max_length=100, unique=True)
     value = models.JSONField()
-    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE)
     updated_at = models.DateTimeField(auto_now=True)

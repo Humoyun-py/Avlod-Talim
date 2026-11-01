@@ -175,6 +175,179 @@ class DomainTestCase(TestCase):
         self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk, teacher=self.teacher).exists())
         self.assertTrue(AuditLog.objects.filter(action="user.deactivated", object_id=str(self.teacher.pk)).exists())
 
+    def test_director_can_permanently_delete_student_and_related_records(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Student history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        TuitionPeriod.objects.create(
+            student=self.student,
+            enrollment=self.enrollment,
+            year=date.today().year,
+            month=date.today().month,
+            due_date=date.today(),
+            amount_due=Decimal("300000"),
+        )
+        payment = register_payment(
+            self.student, Decimal("100000"), "cash", self.admin, "delete-student-payment"
+        )
+        award_coins(self.student, 30, self.teacher, "award", "delete-student-coins")
+        product = ShopProduct.objects.create(name="Delete student product", coin_price=20, stock=1)
+        purchase_product(self.student, product.pk)
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/students/{self.student.pk}/?role=student")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.student.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(TuitionPeriod.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(TuitionPayment.objects.filter(pk=payment.pk).exists())
+        self.assertFalse(FinancialTransaction.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(CoinTransaction.objects.filter(student_id=self.student.pk).exists())
+        self.assertFalse(ShopOrder.objects.filter(student_id=self.student.pk).exists())
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertTrue(Lesson.objects.filter(pk=lesson.pk).exists())
+
+    def test_director_can_permanently_delete_teacher_and_related_records(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Teacher history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/students/{self.teacher.pk}/?role=teacher")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(lesson_id=lesson.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+
+    def test_director_can_permanently_delete_course_and_group_tree(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Course history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/courses/{self.course.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Course.objects.filter(pk=self.course.pk).exists())
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+
+    def test_director_can_permanently_delete_group_and_learning_history(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Group history",
+            teacher=self.teacher,
+            scheduled_date=date.today(),
+        )
+        assignment = Assignment.objects.create(
+            lesson=lesson,
+            title="Group assignment",
+            created_by=self.teacher,
+        )
+        submission = AssignmentSubmission.objects.create(
+            assignment=assignment,
+            student=self.student,
+            text="Submission",
+        )
+        quiz = Quiz.objects.create(
+            lesson=lesson,
+            title="Group quiz",
+            created_by=self.teacher,
+        )
+        question = QuizQuestion.objects.create(quiz=quiz, prompt="Question", order=1)
+        option = QuizOption.objects.create(question=question, text="Answer", is_correct=True)
+        attempt = QuizAttempt.objects.create(quiz=quiz, student=self.student)
+        answer = QuizAnswer.objects.create(
+            attempt=attempt,
+            question=question,
+            selected_option=option,
+            is_correct=True,
+        )
+        record_attendance(
+            lesson,
+            [{"student_id": self.student.pk, "status": AttendanceRecord.Status.PRESENT}],
+            self.teacher,
+        )
+        self.login(self.director)
+
+        response = self.client.delete(f"/api/v1/groups/{self.group.pk}/")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertFalse(Lesson.objects.filter(pk=lesson.pk).exists())
+        self.assertFalse(GroupEnrollment.objects.filter(pk=self.enrollment.pk).exists())
+        self.assertFalse(AttendanceRecord.objects.filter(lesson_id=lesson.pk).exists())
+        self.assertFalse(Assignment.objects.filter(pk=assignment.pk).exists())
+        self.assertFalse(AssignmentSubmission.objects.filter(pk=submission.pk).exists())
+        self.assertFalse(Quiz.objects.filter(pk=quiz.pk).exists())
+        self.assertFalse(QuizQuestion.objects.filter(pk=question.pk).exists())
+        self.assertFalse(QuizOption.objects.filter(pk=option.pk).exists())
+        self.assertFalse(QuizAttempt.objects.filter(pk=attempt.pk).exists())
+        self.assertFalse(QuizAnswer.objects.filter(pk=answer.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+
+    def test_only_director_can_permanently_delete_learning_records(self):
+        self.login(self.admin)
+
+        self.assertEqual(
+            self.client.delete(f"/api/v1/students/{self.student.pk}/?role=student").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/students/{self.teacher.pk}/?role=teacher").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/groups/{self.group.pk}/").status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.delete(f"/api/v1/courses/{self.course.pk}/").status_code,
+            403,
+        )
+        self.assertTrue(User.objects.filter(pk=self.student.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.teacher.pk).exists())
+        self.assertTrue(TeachingGroup.objects.filter(pk=self.group.pk).exists())
+        self.assertTrue(Course.objects.filter(pk=self.course.pk).exists())
+
     def test_staff_and_student_login_and_student_restriction(self):
         response = self.client.post("/api/v1/auth/staff/login/", {"username": "teacher", "password": "TeacherPass123!"})
         self.assertEqual(response.status_code, 200)
