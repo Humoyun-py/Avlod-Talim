@@ -138,7 +138,7 @@ export const DirectorService = {
     if (updates.selectedStudentIds) {
       await api.addStudentsToGroup(id, updates.selectedStudentIds);
     }
-    await api.updateGroup(id, { name: updates.name, course_id: updates.courseId, teacher_id: updates.teacherId, start_date: updates.startDate, schedule: updates.schedule } as any);
+    await api.updateGroup(id, { name: updates.name, course_id: updates.courseId, teacher_id: updates.teacherId, start_date: updates.startDate, schedule: updates.schedule, status: updates.status } as any);
     const group = (await this.getGroups()).find(g => g.id === id); if (!group) throw new Error('Group not found'); return group;
   },
 
