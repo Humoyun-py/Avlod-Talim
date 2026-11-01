@@ -54,6 +54,16 @@ export const DashboardPage: React.FC = () => {
   }
 
   const { metrics, recent_activities, charts } = data;
+  const maxMonthlyRevenue = Math.max(...charts.monthly_revenue.map(item => item.revenue), 1);
+  const attendanceRate = charts.attendance.total
+    ? Math.round((charts.attendance.present / charts.attendance.total) * 100)
+    : 0;
+  const paymentStatuses = [
+    { label: 'Approved', count: charts.payment_status.approved, color: 'bg-emerald-600' },
+    { label: 'Pending', count: charts.payment_status.pending, color: 'bg-amber-500' },
+    { label: 'Rejected', count: charts.payment_status.rejected, color: 'bg-rose-600' },
+  ];
+  const totalPaymentStatuses = paymentStatuses.reduce((total, status) => total + status.count, 0) || 1;
 
   const formatUZS = (val: number) => {
     return `${val.toLocaleString()} UZS`;
@@ -186,8 +196,8 @@ export const DashboardPage: React.FC = () => {
 
         <StatCard
           title="Attendance Rate"
-          value="94.2%"
-          subtitle="Overall academic presence"
+          value={`${attendanceRate}%`}
+          subtitle={`${charts.attendance.present} of ${charts.attendance.total} records present this month`}
           icon={<TrendingUp className="w-5 h-5 text-emerald-700" />}
           accentColor="emerald"
         />
@@ -210,18 +220,17 @@ export const DashboardPage: React.FC = () => {
           {/* Clean CSS Bar Chart */}
           <div className="h-56 flex items-end justify-between gap-3 pt-6 pb-2 px-2 border-b border-slate-100">
             {charts.monthly_revenue.map((item, idx) => {
-              const maxVal = Math.max(...charts.monthly_revenue.map((m) => m.amount), 1);
-              const heightPct = Math.round((item.amount / maxVal) * 100);
+              const heightPct = Math.round((item.revenue / maxMonthlyRevenue) * 100);
               return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-2 group h-full justify-end">
                   <span className="text-[10px] font-mono font-semibold text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity tabular-nums whitespace-nowrap">
-                    {(item.amount / 1000000).toFixed(1)}M
+                    {(item.revenue / 1000000).toFixed(1)}M
                   </span>
                   <div
                     style={{ height: `${Math.max(12, heightPct)}%` }}
                     className="w-full max-w-[42px] bg-slate-900 group-hover:bg-amber-500 rounded-t-md transition-all duration-300"
                   />
-                  <span className="text-xs font-medium text-slate-500 mt-1">{item.month}</span>
+                  <span className="text-xs font-medium text-slate-500 mt-1">{item.label}</span>
                 </div>
               );
             })}
@@ -239,31 +248,30 @@ export const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Payment Methods & Order Pipeline Breakdown */}
+        {/* Payment Status & Shop Orders */}
         <div className="space-y-6">
-          {/* Payment Providers */}
+          {/* Payment Status */}
           <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs">
-            <h3 className="text-sm font-bold text-slate-900 mb-1">Payment Method Distribution</h3>
-            <p className="text-xs text-slate-500 mb-4">Channel share by transaction count</p>
+            <h3 className="text-sm font-bold text-slate-900 mb-1">Payment Status</h3>
+            <p className="text-xs text-slate-500 mb-4">Tuition payments this month</p>
 
             <div className="space-y-3">
-              {Object.entries(charts.payment_methods_breakdown).map(([method, count]) => {
-                const total = Object.values(charts.payment_methods_breakdown).reduce((a, b) => a + b, 0) || 1;
-                const pct = Math.round((count / total) * 100);
+              {paymentStatuses.map(status => {
+                const pct = Math.round((status.count / totalPaymentStatuses) * 100);
                 return (
-                  <div key={method}>
+                  <div key={status.label}>
                     <div className="flex items-center justify-between text-xs mb-1">
                       <span className="font-semibold text-slate-700 uppercase tracking-wide">
-                        {method}
+                        {status.label}
                       </span>
                       <span className="text-slate-500 font-mono tabular-nums">
-                        {count} tx ({pct}%)
+                        {status.count} tx ({pct}%)
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
                       <div
                         style={{ width: `${pct}%` }}
-                        className="bg-slate-800 h-full rounded-full transition-all duration-500"
+                        className={`${status.color} h-full rounded-full transition-all duration-500`}
                       />
                     </div>
                   </div>
@@ -272,28 +280,24 @@ export const DashboardPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Shop Orders status */}
+          {/* Pending Shop Orders */}
           <div className="bg-white p-5 rounded-xl border border-slate-200/90 shadow-2xs">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-bold text-slate-900">Academy Shop Orders</h3>
-              <span className="text-xs font-mono font-bold text-slate-700 tabular-nums">
-                {Object.values(charts.shop_order_status).reduce((a, b) => a + b, 0)} total
-              </span>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/shop-orders')}
+                className="text-xs font-medium text-slate-700 hover:text-slate-950 inline-flex items-center gap-1"
+              >
+                View orders <ArrowRight className="w-3 h-3" />
+              </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-amber-50/60 border border-amber-100">
-                <span className="text-slate-500 block text-[11px]">Pending</span>
-                <span className="text-base font-bold text-amber-900 font-mono tabular-nums">
-                  {charts.shop_order_status.pending || 0}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-teal-50/60 border border-teal-100">
-                <span className="text-slate-500 block text-[11px]">Ready</span>
-                <span className="text-base font-bold text-teal-900 font-mono tabular-nums">
-                  {charts.shop_order_status.ready || 0}
-                </span>
-              </div>
+            <div className="p-3 rounded-lg bg-amber-50/60 border border-amber-100">
+              <span className="text-slate-500 block text-[11px]">Pending</span>
+              <span className="text-xl font-bold text-amber-900 font-mono tabular-nums">
+                {metrics.pending_shop_orders}
+              </span>
             </div>
           </div>
         </div>
