@@ -200,10 +200,34 @@ class CoinTransaction(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["reference"], condition=~models.Q(reference=""), name="uniq_coin_reference")]
 
+class OrganizationSettings(models.Model):
+    center_name = models.CharField(max_length=160, default="Avlod Ta'lim")
+    logo_url = models.TextField(blank=True)
+    primary_color = models.CharField(max_length=7, default="#5C42FD")
+    payment_deadline_day = models.PositiveSmallIntegerField(default=10, validators=[MinValueValidator(1), MaxValueValidator(31)])
+    default_monthly_payment = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("1200000"), validators=[MinValueValidator(Decimal("0"))])
+    teacher_salary_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("40.00"), validators=[MinValueValidator(Decimal("0")), MaxValueValidator(100)])
+    require_two_factor = models.BooleanField(default=True)
+    session_timeout_minutes = models.PositiveSmallIntegerField(default=60, validators=[MinValueValidator(5)])
+    allow_cash_receipts = models.BooleanField(default=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+class ShopCategory(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
 class ShopProduct(models.Model):
     name = models.CharField(max_length=160)
     description = models.TextField(blank=True)
     image = models.ImageField(upload_to="products/", null=True, blank=True)
+    image_data = models.TextField(blank=True)
+    category = models.ForeignKey(ShopCategory, null=True, blank=True, on_delete=models.SET_NULL, related_name="products")
     coin_price = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     stock = models.PositiveIntegerField(default=0)
     active = models.BooleanField(default=True)

@@ -254,6 +254,82 @@ class DomainTestCase(TestCase):
         self.assertEqual(coin_balance(self.student), 10)
         with self.assertRaises(ValueError): purchase_product(self.student, product.pk)
 
+    def test_director_settings_categories_and_monthly_report_use_api_data(self):
+        today = date.today()
+        self.login(self.director)
+
+        settings_response = self.client.patch(
+            "/api/v1/settings/",
+            {"center_name": "Avlod Center", "default_monthly_payment": "450000"},
+            format="json",
+        )
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertEqual(
+            self.client.get("/api/v1/settings/").data["center_name"],
+            "Avlod Center",
+        )
+
+        category_response = self.client.post(
+            "/api/v1/shop/categories/",
+            {"name": "Books"},
+            format="json",
+        )
+        self.assertEqual(category_response.status_code, 201)
+        categories = self.client.get("/api/v1/shop/categories/").data["results"]
+        self.assertIn(category_response.data["id"], {row["id"] for row in categories})
+
+        Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Report lesson",
+            teacher=self.teacher,
+            scheduled_date=today,
+            status=Lesson.Status.COMPLETED,
+        )
+        register_payment(
+            self.student,
+            Decimal("125000"),
+            "cash",
+            self.admin,
+            "report-cash",
+        )
+        report_response = self.client.get(
+            "/api/v1/reports/monthly/",
+            {
+                "month": today.month,
+                "year": today.year,
+                "teacher": self.teacher.pk,
+            },
+        )
+        self.assertEqual(report_response.status_code, 200)
+        self.assertEqual(
+            Decimal(report_response.data["tuition_collected"]),
+            Decimal("125000"),
+        )
+        self.assertEqual(
+            Decimal(report_response.data["teacher_salary"]),
+            Decimal("50000"),
+        )
+        self.assertEqual(report_response.data["students"]["total"], 1)
+
+    def test_director_can_reject_shop_order_and_refund_coins(self):
+        product = ShopProduct.objects.create(name="Book", coin_price=20, stock=1, active=True)
+        award_coins(self.student, 30, self.teacher, "great work", "award-refund")
+        order = purchase_product(self.student, product.pk)
+        self.login(self.director)
+
+        response = self.client.patch(
+            f"/api/v1/shop/orders/{order.pk}/status/",
+            {"status": ShopOrder.Status.REJECTED},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(coin_balance(self.student), 30)
+        product.refresh_from_db()
+        self.assertEqual(product.stock, 1)
+
     def test_teacher_coin_history_is_limited_to_assigned_students(self):
         award_coins(self.student, 30, self.teacher, "great work", "award-history-1")
         self.login(self.teacher)
@@ -292,6 +368,7 @@ class DomainTestCase(TestCase):
         expected_metric_keys = {
             "total_students",
             "active_students",
+            "total_teachers",
             "total_groups",
             "available_courses",
             "payments_this_month",

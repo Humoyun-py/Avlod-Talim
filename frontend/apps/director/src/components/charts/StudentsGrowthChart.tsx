@@ -1,12 +1,18 @@
 import React from 'react';
-import { MONTHLY_REVENUE_CHART_DATA } from '../../data/mockData';
-import { Users, ArrowUpRight } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 
-export const StudentsGrowthChart: React.FC = () => {
+interface StudentRegistrationPoint {
+  year: number;
+  month: number;
+  label: string;
+  students: number;
+}
+
+export const StudentsGrowthChart: React.FC<{ data: StudentRegistrationPoint[]; totalStudents: number }> = ({ data: allData, totalStudents }) => {
   const { t } = useLanguage();
-  const data = MONTHLY_REVENUE_CHART_DATA.slice(-7);
-  const maxVal = Math.max(...data.map(d => d.students)) * 1.2;
+  const data = allData.slice(-7);
+  const maxVal = Math.max(1, ...data.map(d => d.students)) * 1.2;
 
   return (
     <div className="bg-white rounded-2xl p-6 border border-[#E9EAF3] shadow-xs flex flex-col justify-between">
@@ -20,9 +26,6 @@ export const StudentsGrowthChart: React.FC = () => {
               {t('charts.growth_title')}
             </h3>
           </div>
-          <span className="inline-flex items-center gap-0.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md">
-            <ArrowUpRight className="w-3.5 h-3.5" /> +18.2%
-          </span>
         </div>
         <p className="text-xs text-gray-500 mt-1">
           {t('charts.growth_sub')}
@@ -59,7 +62,7 @@ export const StudentsGrowthChart: React.FC = () => {
 
       <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
         <span>{t('charts.active_students_total')}</span>
-        <span className="font-bold text-gray-900 text-sm">294 {t('common.students_count_suffix')}</span>
+        <span className="font-bold text-gray-900 text-sm">{totalStudents} {t('common.students_count_suffix')}</span>
       </div>
     </div>
   );

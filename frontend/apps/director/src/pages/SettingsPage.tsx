@@ -40,10 +40,9 @@ export const SettingsPage: React.FC = () => {
   const loadSettings = async () => {
     setLoading(true);
     try {
-      throw new Error('Settings API unavailable');
+      setSettings(await DirectorService.getSettings());
     } catch {
-      setSettings(null);
-      error('Xatolik', 'Tashkilot sozlamalarini backend hozircha bermaydi; sahifadagi o‘zgarishlar saqlanmaydi.');
+      error('Xatolik', 'Tashkilot sozlamalarini API’dan yuklab bo‘lmadi.');
     } finally {
       setLoading(false);
     }
@@ -64,7 +63,7 @@ export const SettingsPage: React.FC = () => {
       applyBrandTheme(AVLOD_PERMANENT_PURPLE);
       success('Saqlandi', 'Tizim sozlamalari muvaffaqiyatli saqlandi');
     } catch {
-      error('Xatolik', 'Tashkilot sozlamalarini saqlash endpointi mavjud emas.');
+      error('Xatolik', 'Tashkilot sozlamalarini saqlab bo‘lmadi.');
     }
   };
 
@@ -92,10 +91,17 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  if (loading || !settings) {
+  if (loading) {
     return (
       <div className="p-8 text-center text-xs text-gray-400">
         Sozlamalar yuklanmoqda...
+      </div>
+    );
+  }
+  if (!settings) {
+    return (
+      <div className="p-8 text-center text-xs text-rose-500">
+        Sozlamalar API’dan yuklanmadi. Sahifani yangilab qayta urinib ko‘ring.
       </div>
     );
   }

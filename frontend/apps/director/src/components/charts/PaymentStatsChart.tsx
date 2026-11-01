@@ -2,14 +2,15 @@ import React from 'react';
 import { CreditCard, CheckCircle2, Clock, AlertCircle, Ban } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 
-export const PaymentStatsChart: React.FC = () => {
+export const PaymentStatsChart: React.FC<{ data: { approved: number; pending: number; rejected: number; blocked_students: number } }> = ({ data }) => {
   const { t } = useLanguage();
 
+  const total = data.approved + data.pending + data.rejected + data.blocked_students;
   const stats = [
-    { label: t('status.paid'), count: 218, percent: 74, color: 'bg-emerald-500', barBg: 'bg-emerald-100', icon: CheckCircle2, text: 'text-emerald-700' },
-    { label: t('status.pending'), count: 44, percent: 15, color: 'bg-amber-500', barBg: 'bg-amber-100', icon: Clock, text: 'text-amber-700' },
-    { label: t('status.overdue'), count: 23, percent: 8, color: 'bg-rose-500', barBg: 'bg-rose-100', icon: AlertCircle, text: 'text-rose-700' },
-    { label: t('status.blocked'), count: 9, percent: 3, color: 'bg-gray-500', barBg: 'bg-gray-200', icon: Ban, text: 'text-gray-700' }
+    { label: t('status.paid'), count: data.approved, percent: total ? Math.round(data.approved / total * 100) : 0, color: 'bg-emerald-500', barBg: 'bg-emerald-100', icon: CheckCircle2, text: 'text-emerald-700' },
+    { label: t('status.pending'), count: data.pending, percent: total ? Math.round(data.pending / total * 100) : 0, color: 'bg-amber-500', barBg: 'bg-amber-100', icon: Clock, text: 'text-amber-700' },
+    { label: t('status.overdue'), count: data.rejected, percent: total ? Math.round(data.rejected / total * 100) : 0, color: 'bg-rose-500', barBg: 'bg-rose-100', icon: AlertCircle, text: 'text-rose-700' },
+    { label: t('status.blocked'), count: data.blocked_students, percent: total ? Math.round(data.blocked_students / total * 100) : 0, color: 'bg-gray-500', barBg: 'bg-gray-200', icon: Ban, text: 'text-gray-700' }
   ];
 
   return (

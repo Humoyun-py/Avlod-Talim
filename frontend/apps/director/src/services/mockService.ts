@@ -2,6 +2,8 @@ import {
   CoinTransaction,
   Course,
   DirectorSettings,
+  DirectorDashboardCharts,
+  DirectorMonthlyReport,
   Group,
   Payment,
   PaymentMethod,
@@ -33,6 +35,15 @@ const mapDirectorCourse = (c: any): Course => ({ id: String(c.id), name: c.name,
 const mapDirectorGroup = (g: any): Group => ({ id: String(g.id), name: g.name, courseId: String(g.course), courseName: g.course_name || '', teacherId: String(g.teacher), teacherName: g.teacher_name || '', studentsCount: g.enrollments?.length || 0, maxStudents: 0, schedule: JSON.stringify(g.schedule), room: '', status: g.active ? 'active' : 'archived', startDate: g.start_date, studentIds: (g.enrollments || []).map((e: any) => String(e.student)) });
 
 export const DirectorService = {
+  async getDashboardCharts(): Promise<DirectorDashboardCharts> {
+    const data = await api.getAdminDashboard();
+    return data.charts;
+  },
+
+  async getMonthlyReport(params: { month: number; year: number; teacher?: string; course?: string; group?: string }): Promise<DirectorMonthlyReport> {
+    return api.getMonthlyReport(params);
+  },
+
   // Teachers
   async getTeachers(): Promise<Teacher[]> {
     const page = await api.getTeachers();
@@ -212,16 +223,22 @@ export const DirectorService = {
   // Shop Products
   async getProducts(): Promise<Product[]> {
     const payload = await pagedApi('/shop/products/'); const rows = payload.results || payload;
-    return rows.map((p: any) => ({ id: String(p.id), name: p.name, description: p.description || '', coinPrice: Number(p.coin_price), imageUrl: p.image || '', stock: p.stock, status: !p.active || p.stock === 0 ? 'out_of_stock' : p.stock < 5 ? 'low_stock' : 'in_stock', category: '', createdAt: p.created_at }));
+    return rows.map((p: any) => ({ id: String(p.id), name: p.name, description: p.description || '', coinPrice: Number(p.coin_price), imageUrl: p.image_data || p.image || '', stock: p.stock, status: !p.active || p.stock === 0 ? 'out_of_stock' : p.stock < 5 ? 'low_stock' : 'in_stock', category: p.category_name || '', createdAt: p.created_at }));
   },
 
   async createProduct(data: Omit<Product, 'id' | 'createdAt'>): Promise<Product> {
-    const p = await api.createProduct({ name: data.name, description: data.description, coin_price: data.coinPrice, stock: data.stock, active: data.status !== 'out_of_stock' } as any);
+    const categories = await this.getShopCategories();
+    const category = categories.find(item => item.name.toLowerCase() === data.category.toLowerCase());
+    if (!category) throw new Error('Mahsulot kategoriyasi topilmadi.');
+    const p = await api.createProduct({ name: data.name, description: data.description, image_data: data.imageUrl, category: category.id, coin_price: data.coinPrice, stock: data.stock, active: data.status !== 'out_of_stock' } as any);
     return { ...data, id: String(p.id), createdAt: p.created_at };
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product> {
-    const p = await api.updateProduct(id, { name: updates.name, description: updates.description, coin_price: updates.coinPrice, stock: updates.stock, active: updates.status ? updates.status !== 'out_of_stock' : undefined } as any);
+    const categories = updates.category ? await this.getShopCategories() : [];
+    const category = updates.category ? categories.find(item => item.name.toLowerCase() === updates.category?.toLowerCase()) : undefined;
+    if (updates.category && !category) throw new Error('Mahsulot kategoriyasi topilmadi.');
+    const p = await api.updateProduct(id, { name: updates.name, description: updates.description, image_data: updates.imageUrl, category: category?.id, coin_price: updates.coinPrice, stock: updates.stock, active: updates.status ? updates.status !== 'out_of_stock' : undefined } as any);
     return { ...(await this.getProducts()).find(x => x.id === id)!, ...updates, id: String(p.id) };
   },
 
@@ -236,15 +253,56 @@ export const DirectorService = {
   },
 
   async updateOrderStatus(id: string, status: ShopOrder['status']): Promise<ShopOrder> {
-    throw new Error('Order status changes are not exposed by the backend yet.');
+    const updated = await api.updateOrderStatus(id, status);
+    return { id: String(updated.id), orderNumber: String(updated.order_number), studentId: String(updated.student_id), studentName: updated.student_name, studentPublicId: '', productId: String(updated.product_id), productName: updated.product_name, productImage: '', coinAmount: updated.total_coins, date: updated.order_date, status: updated.status === 'processing' ? 'Accepted' : updated.status === 'completed' ? 'Completed' : updated.status === 'rejected' || updated.status === 'cancelled' ? 'Rejected' : 'Pending' };
   },
 
   // Director Settings
   async getSettings(): Promise<DirectorSettings> {
-    throw new Error('Organization settings are not stored by the backend yet.');
+    const data = await api.getOrganizationSettings();
+    return {
+      centerName: String(data.center_name),
+      logoUrl: String(data.logo_url || ''),
+      primaryColor: String(data.primary_color),
+      paymentDeadlineDay: Number(data.payment_deadline_day),
+      defaultMonthlyPayment: Number(data.default_monthly_payment),
+      teacherSalaryPercentage: Number(data.teacher_salary_percentage),
+      requireTwoFactor: Boolean(data.require_two_factor),
+      sessionTimeoutMinutes: Number(data.session_timeout_minutes),
+      allowCashReceipts: Boolean(data.allow_cash_receipts),
+    };
   },
 
   async updateSettings(updates: Partial<DirectorSettings>): Promise<DirectorSettings> {
-    throw new Error('Organization settings are not stored by the backend yet.');
+    const data = await api.updateOrganizationSettings({
+      center_name: updates.centerName,
+      logo_url: updates.logoUrl,
+      payment_deadline_day: updates.paymentDeadlineDay,
+      default_monthly_payment: updates.defaultMonthlyPayment,
+      teacher_salary_percentage: updates.teacherSalaryPercentage,
+      require_two_factor: updates.requireTwoFactor,
+      session_timeout_minutes: updates.sessionTimeoutMinutes,
+      allow_cash_receipts: updates.allowCashReceipts,
+    });
+    return {
+      centerName: String(data.center_name),
+      logoUrl: String(data.logo_url || ''),
+      primaryColor: String(data.primary_color),
+      paymentDeadlineDay: Number(data.payment_deadline_day),
+      defaultMonthlyPayment: Number(data.default_monthly_payment),
+      teacherSalaryPercentage: Number(data.teacher_salary_percentage),
+      requireTwoFactor: Boolean(data.require_two_factor),
+      sessionTimeoutMinutes: Number(data.session_timeout_minutes),
+      allowCashReceipts: Boolean(data.allow_cash_receipts),
+    };
+  },
+
+  async getShopCategories(): Promise<{ id: number; name: string }[]> {
+    const data = await api.getShopCategories();
+    return data.results.map(category => ({ id: category.id, name: category.name }));
+  },
+
+  async createShopCategory(name: string): Promise<{ id: number; name: string }> {
+    return api.createShopCategory(name);
   }
 };

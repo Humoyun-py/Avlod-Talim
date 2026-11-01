@@ -159,6 +159,35 @@ export interface DirectorSettings {
   allowCashReceipts: boolean;
 }
 
+export interface DirectorDashboardCharts {
+  monthly_revenue: { year: number; month: number; label: string; revenue: number }[];
+  student_registrations: { year: number; month: number; label: string; students: number }[];
+  attendance: { present: number; absent: number; excused: number; total: number };
+  payment_status: { approved: number; pending: number; rejected: number; blocked_students: number };
+}
+
+export interface DirectorMonthlyReport {
+  year: number;
+  month: number;
+  tuition_collected: string;
+  revenue_by_method: Record<string, string>;
+  students: {
+    new: number;
+    active: number;
+    blocked: number;
+    total: number;
+  };
+  teachers: number;
+  teacher_salary: string;
+  groups: number;
+  attendance: {
+    present: number;
+    absent: number;
+    excused: number;
+    total: number;
+  };
+}
+
 export interface ToastMessage {
   id: string;
   type: 'success' | 'error' | 'warning' | 'info';
@@ -180,4 +209,3 @@ export interface CoinTransaction {
   reason: string;
   date: string;
 }
-

@@ -7,8 +7,10 @@ import {
   Payment,
   ShopProduct,
   ShopOrder,
+  ShopCategory,
   NotificationItem,
   DashboardData,
+  MonthlyReportData,
   StudentCredentials,
 } from '../types';
 
@@ -161,6 +163,31 @@ class ApiService {
   // ---------------- DASHBOARD ----------------
   async getAdminDashboard(): Promise<DashboardData> {
     return this.request<DashboardData>('/dashboard/');
+  }
+
+  async getMonthlyReport(params: {
+    month: number;
+    year: number;
+    teacher?: string;
+    course?: string;
+    group?: string;
+  }): Promise<MonthlyReportData> {
+    const query = new URLSearchParams({ month: String(params.month), year: String(params.year) });
+    if (params.teacher && params.teacher !== 'all') query.set('teacher', params.teacher);
+    if (params.course && params.course !== 'all') query.set('course', params.course);
+    if (params.group && params.group !== 'all') query.set('group', params.group);
+    return this.request<MonthlyReportData>(`/reports/monthly/?${query.toString()}`);
+  }
+
+  async getOrganizationSettings(): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/settings/');
+  }
+
+  async updateOrganizationSettings(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request<Record<string, unknown>>('/settings/', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
   }
 
   // ---------------- COURSES ----------------
@@ -370,18 +397,31 @@ class ApiService {
   async createProduct(payload: Partial<ShopProduct>): Promise<ShopProduct> {
     const data = { ...payload, active: (payload as any).is_active, coin_price: (payload as any).price_coins, stock: (payload as any).stock_quantity };
     delete (data as any).is_active; delete (data as any).price_coins; delete (data as any).stock_quantity;
-    return this.request<ShopProduct>('/shop/products/', {
+    const created = await this.request<any>('/shop/products/', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+    return { ...created, image_url: created.image_data || created.image || '', stock_quantity: created.stock, is_active: created.active, coin_price: created.coin_price };
   }
 
   async updateProduct(id: string, payload: Partial<ShopProduct>): Promise<ShopProduct> {
     const data = { ...payload, active: (payload as any).is_active, coin_price: (payload as any).price_coins, stock: (payload as any).stock_quantity };
     delete (data as any).is_active; delete (data as any).price_coins; delete (data as any).stock_quantity;
-    return this.request<ShopProduct>(`/shop/products/${id}/`, {
+    const updated = await this.request<any>(`/shop/products/${id}/`, {
       method: 'PATCH',
       body: JSON.stringify(data),
+    });
+    return { ...updated, image_url: updated.image_data || updated.image || '', stock_quantity: updated.stock, is_active: updated.active, coin_price: updated.coin_price };
+  }
+
+  async getShopCategories(): Promise<{ count: number; results: ShopCategory[] }> {
+    return this.request<{ count: number; results: ShopCategory[] }>('/shop/categories/');
+  }
+
+  async createShopCategory(name: string): Promise<ShopCategory> {
+    return this.request<ShopCategory>('/shop/categories/', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
     });
   }
 
@@ -394,7 +434,22 @@ class ApiService {
   }
 
   async updateOrderStatus(id: string, status: string, admin_notes?: string): Promise<ShopOrder> {
-    throw new Error('Order status changes are not implemented by the backend; this endpoint is read-only.');
+    const backendStatus = ({ accepted: 'approved', completed: 'fulfilled' } as Record<string, string>)[status.toLowerCase()] || status.toLowerCase();
+    const updated = await this.request<any>(`/shop/orders/${id}/status/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: backendStatus, admin_notes }),
+    });
+    return {
+      ...updated,
+      student_id: String(updated.student),
+      student_name: updated.student_name || '',
+      product_id: String(updated.product),
+      product_name: updated.product_name || '',
+      total_coins: updated.unit_price * updated.quantity,
+      order_number: String(updated.id),
+      order_date: updated.created_at,
+      status: ({ pending: 'pending', approved: 'processing', rejected: 'rejected', fulfilled: 'completed' } as Record<string, string>)[updated.status] as ShopOrder['status'],
+    };
   }
 
   // ---------------- NOTIFICATIONS ----------------

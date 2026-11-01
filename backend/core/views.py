@@ -1,6 +1,8 @@
+from datetime import date
 from decimal import Decimal
 from django.contrib.auth import authenticate
-from django.db.models import Sum, Count
+from django.db import transaction
+from django.db.models import Sum, Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets, filters
@@ -312,6 +314,12 @@ class ProductViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return ShopProduct.objects.filter(active=True) if self.request.user.role == "student" else ShopProduct.objects.all()
 
+class ShopCategoryViewSet(viewsets.ModelViewSet):
+    queryset = ShopCategory.objects.all()
+    serializer_class = ShopCategorySerializer
+    permission_classes = [StaffWritePermission]
+    roles = ("director", "admin")
+
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Notification.objects.none()
     serializer_class = NotificationSerializer
@@ -331,7 +339,8 @@ class DashboardView(APIView):
         if request.user.role == "teacher":
             groups = TeachingGroup.objects.filter(teacher=request.user)
             return Response({"groups": groups.count(), "students": GroupEnrollment.objects.filter(group__in=groups, active=True).count(), "lessons": Lesson.objects.filter(teacher=request.user).count()})
-        students = User.objects.filter(role="student", is_active=True).count()
+        students = User.objects.filter(role="student")
+        active_students = students.filter(is_active=True, tuition_restricted=False).count()
         teachers = User.objects.filter(role="teacher", is_active=True).count()
         groups = TeachingGroup.objects.filter(active=True).count()
         pending = TuitionPayment.objects.filter(status="pending").count()
@@ -340,7 +349,99 @@ class DashboardView(APIView):
             paid = FinancialTransaction.objects.filter(student_id=period["student_id"], kind=FinancialTransaction.Type.TUITION,
                 transaction_date__year=period["year"], transaction_date__month=period["month"]).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
             outstanding += max(Decimal("0.00"), period["amount_due"] - paid)
-        return Response({"metrics": {"total_students": students, "active_students": students, "total_groups": groups, "available_courses": Course.objects.filter(active=True).count(), "payments_this_month": FinancialTransaction.objects.filter(kind="tuition", transaction_date__year=timezone.localdate().year, transaction_date__month=timezone.localdate().month).aggregate(total=Sum("amount"))["total"] or 0, "outstanding_payments": outstanding, "pending_payment_verifications": pending, "pending_shop_orders": ShopOrder.objects.filter(status="pending").count()}, "recent_activities": [], "charts": {"monthly_revenue": [], "student_registrations": [], "payment_methods_breakdown": {}, "shop_order_status": {}}})
+        today = timezone.localdate()
+        chart_months = []
+        for offset in range(11, -1, -1):
+            month_number = today.month - offset
+            year = today.year
+            while month_number <= 0:
+                month_number += 12
+                year -= 1
+            chart_months.append((year, month_number))
+        first_year, first_month = chart_months[0]
+        revenue_rows = FinancialTransaction.objects.filter(
+            kind=FinancialTransaction.Type.TUITION,
+            transaction_date__gte=date(first_year, first_month, 1),
+        ).values("transaction_date__year", "transaction_date__month").annotate(total=Sum("amount"))
+        revenue_by_month = {
+            (row["transaction_date__year"], row["transaction_date__month"]): float(row["total"] or 0)
+            for row in revenue_rows
+        }
+        registration_rows = User.objects.filter(
+            role=User.Role.STUDENT,
+            date_joined__date__gte=date(first_year, first_month, 1),
+        ).values("date_joined__year", "date_joined__month").annotate(total=Count("id"))
+        registrations_by_month = {
+            (row["date_joined__year"], row["date_joined__month"]): row["total"]
+            for row in registration_rows
+        }
+        month_labels = ["Yan", "Fev", "Mar", "Apr", "May", "Iyun", "Iyul", "Avg", "Sen", "Okt", "Noy", "Dek"]
+        monthly_revenue = [
+            {"year": year, "month": month, "label": month_labels[month - 1], "revenue": revenue_by_month.get((year, month), 0)}
+            for year, month in chart_months
+        ]
+        student_registrations = [
+            {"year": year, "month": month, "label": month_labels[month - 1], "students": registrations_by_month.get((year, month), 0)}
+            for year, month in chart_months
+        ]
+        attendance_rows = AttendanceRecord.objects.filter(
+            date__year=today.year, date__month=today.month
+        ).values("status").annotate(total=Count("id"))
+        attendance = {row["status"]: row["total"] for row in attendance_rows}
+        attendance_total = sum(attendance.values())
+        payment_rows = TuitionPayment.objects.filter(
+            created_at__year=today.year, created_at__month=today.month
+        ).values("status").annotate(total=Count("id"))
+        payment_status = {row["status"]: row["total"] for row in payment_rows}
+        return Response({
+            "metrics": {
+                "total_students": students.count(),
+                "active_students": active_students,
+                "total_teachers": teachers,
+                "total_groups": groups,
+                "available_courses": Course.objects.filter(active=True).count(),
+                "payments_this_month": FinancialTransaction.objects.filter(
+                    kind="tuition", transaction_date__year=today.year, transaction_date__month=today.month
+                ).aggregate(total=Sum("amount"))["total"] or 0,
+                "outstanding_payments": outstanding,
+                "pending_payment_verifications": pending,
+                "pending_shop_orders": ShopOrder.objects.filter(status="pending").count(),
+            },
+            "recent_activities": [],
+            "charts": {
+                "monthly_revenue": monthly_revenue,
+                "student_registrations": student_registrations,
+                "attendance": {
+                    "present": attendance.get(AttendanceRecord.Status.PRESENT, 0),
+                    "absent": attendance.get(AttendanceRecord.Status.ABSENT, 0),
+                    "excused": attendance.get(AttendanceRecord.Status.EXCUSED, 0),
+                    "total": attendance_total,
+                },
+                "payment_status": {
+                    "approved": payment_status.get(TuitionPayment.Status.APPROVED, 0),
+                    "pending": payment_status.get(TuitionPayment.Status.PENDING, 0),
+                    "rejected": payment_status.get(TuitionPayment.Status.REJECTED, 0),
+                    "blocked_students": students.filter(Q(is_active=False) | Q(tuition_restricted=True)).count(),
+                },
+            },
+        })
+
+class OrganizationSettingsView(APIView):
+    serializer_class = OrganizationSettingsSerializer
+    permission_classes = [RolePermission]
+    roles = ("director", "admin")
+
+    def get(self, request):
+        settings, _ = OrganizationSettings.objects.get_or_create(pk=1)
+        return Response(OrganizationSettingsSerializer(settings).data)
+
+    def patch(self, request):
+        settings, _ = OrganizationSettings.objects.get_or_create(pk=1)
+        serializer = OrganizationSettingsSerializer(settings, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        audit(request.user, "organization.settings_updated", settings)
+        return Response(serializer.data)
 
 class CoinView(APIView):
     serializer_class = SimplePayloadSerializer
@@ -394,6 +495,46 @@ class ShopOrderViewSet(viewsets.ReadOnlyModelViewSet):
         return Response({"id": order.pk, "student": order.student_id, "student_name": order.student.get_full_name(), "product": order.product_id,
                          "product_name": order.product.name, "quantity": order.quantity, "unit_price": order.unit_price,
                          "status": order.status, "created_at": order.created_at})
+    @action(detail=True, methods=["patch"], url_path="status")
+    @transaction.atomic
+    def update_status(self, request, pk=None):
+        if request.user.role not in ("director", "admin"):
+            raise PermissionDenied()
+        order = get_object_or_404(
+            ShopOrder.objects.select_for_update().select_related("student", "product"),
+            pk=pk,
+        )
+        next_status = request.data.get("status")
+        allowed = {
+            ShopOrder.Status.PENDING: {ShopOrder.Status.APPROVED, ShopOrder.Status.REJECTED},
+            ShopOrder.Status.APPROVED: {ShopOrder.Status.FULFILLED, ShopOrder.Status.REJECTED},
+        }
+        if next_status not in allowed.get(order.status, set()):
+            raise ValidationError({"status": "This order status transition is not allowed."})
+        if next_status == ShopOrder.Status.REJECTED:
+            order.product.stock += order.quantity
+            order.product.save(update_fields=["stock"])
+            CoinTransaction.objects.create(
+                student=order.student,
+                amount=order.unit_price * order.quantity,
+                reason=f"Shop order #{order.pk} refund",
+                created_by=request.user,
+            )
+        order.status = next_status
+        order.decided_by = request.user
+        order.save(update_fields=["status", "decided_by"])
+        audit(request.user, "shop.order_status_updated", order, {"status": next_status})
+        return Response({
+            "id": order.pk,
+            "student": order.student_id,
+            "student_name": order.student.get_full_name(),
+            "product": order.product_id,
+            "product_name": order.product.name,
+            "quantity": order.quantity,
+            "unit_price": order.unit_price,
+            "status": order.status,
+            "created_at": order.created_at,
+        })
 
 class ReportView(APIView):
     serializer_class = SimplePayloadSerializer
@@ -401,9 +542,78 @@ class ReportView(APIView):
     roles = ("director", "admin")
     def get(self, request):
         month, year = int(request.query_params.get("month", timezone.localdate().month)), int(request.query_params.get("year", timezone.localdate().year))
-        revenue = FinancialTransaction.objects.filter(kind="tuition", transaction_date__year=year, transaction_date__month=month).aggregate(total=Sum("amount"))["total"] or 0
-        attendance = AttendanceRecord.objects.filter(date__year=year, date__month=month).values("status").annotate(count=Count("id"))
-        return Response({"year": year, "month": month, "tuition_collected": str(revenue), "attendance": list(attendance)})
+        teacher_id = request.query_params.get("teacher")
+        course_id = request.query_params.get("course")
+        group_id = request.query_params.get("group")
+        enrollments = GroupEnrollment.objects.filter(active=True)
+        if teacher_id:
+            enrollments = enrollments.filter(group__teacher_id=teacher_id)
+        if course_id:
+            enrollments = enrollments.filter(group__course_id=course_id)
+        if group_id:
+            enrollments = enrollments.filter(group_id=group_id)
+        student_ids = enrollments.values_list("student_id", flat=True).distinct()
+        transactions = FinancialTransaction.objects.filter(
+            kind=FinancialTransaction.Type.TUITION,
+            transaction_date__year=year,
+            transaction_date__month=month,
+        )
+        if teacher_id or course_id or group_id:
+            transactions = transactions.filter(student_id__in=student_ids)
+        revenue_by_method = {
+            row["payment__method"] or "other": row["total"] or Decimal("0.00")
+            for row in transactions.values("payment__method").annotate(total=Sum("amount"))
+        }
+        revenue = sum(revenue_by_method.values(), Decimal("0.00"))
+        students = User.objects.filter(role=User.Role.STUDENT)
+        if teacher_id or course_id or group_id:
+            students = students.filter(pk__in=student_ids)
+        attendance_qs = AttendanceRecord.objects.filter(date__year=year, date__month=month)
+        if teacher_id:
+            attendance_qs = attendance_qs.filter(lesson__teacher_id=teacher_id)
+        if course_id:
+            attendance_qs = attendance_qs.filter(group__course_id=course_id)
+        if group_id:
+            attendance_qs = attendance_qs.filter(group_id=group_id)
+        attendance = {row["status"]: row["count"] for row in attendance_qs.values("status").annotate(count=Count("id"))}
+        total_attendance = sum(attendance.values())
+        period_students = students.filter(date_joined__year=year, date_joined__month=month).count()
+        active_students = students.filter(is_active=True, tuition_restricted=False).count()
+        blocked_students = students.filter(Q(is_active=False) | Q(tuition_restricted=True)).count()
+        teachers = User.objects.filter(role=User.Role.TEACHER, is_active=True)
+        groups = TeachingGroup.objects.filter(active=True)
+        if teacher_id:
+            teachers = teachers.filter(pk=teacher_id)
+            groups = groups.filter(teacher_id=teacher_id)
+        if course_id:
+            groups = groups.filter(course_id=course_id)
+        if group_id:
+            groups = groups.filter(pk=group_id)
+        teacher_salary = sum(
+            (calculate_salary(teacher, year, month).calculated_salary for teacher in teachers),
+            Decimal("0.00"),
+        )
+        return Response({
+            "year": year,
+            "month": month,
+            "tuition_collected": str(revenue),
+            "revenue_by_method": {key: str(value) for key, value in revenue_by_method.items()},
+            "students": {
+                "new": period_students,
+                "active": active_students,
+                "blocked": blocked_students,
+                "total": students.count(),
+            },
+            "teachers": teachers.count(),
+            "teacher_salary": str(teacher_salary),
+            "groups": groups.count(),
+            "attendance": {
+                "present": attendance.get(AttendanceRecord.Status.PRESENT, 0),
+                "absent": attendance.get(AttendanceRecord.Status.ABSENT, 0),
+                "excused": attendance.get(AttendanceRecord.Status.EXCUSED, 0),
+                "total": total_attendance,
+            },
+        })
 
 class SalaryView(APIView):
     serializer_class = SimplePayloadSerializer
