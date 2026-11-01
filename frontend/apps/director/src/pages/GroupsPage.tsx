@@ -37,6 +37,7 @@ export const GroupsPage: React.FC = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [updatingGroupId, setUpdatingGroupId] = useState<string | null>(null);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -194,6 +195,27 @@ export const GroupsPage: React.FC = () => {
     }
   };
 
+  const handleToggleGroupStatus = async (group: Group) => {
+    setUpdatingGroupId(group.id);
+    try {
+      await DirectorService.updateGroup(group.id, {
+        status: group.status === 'active' ? 'archived' : 'active',
+      });
+      await loadData();
+      success(
+        'Holat yangilandi',
+        group.status === 'active' ? 'Guruh nofaol qilindi.' : 'Guruh faollashtirildi.'
+      );
+    } catch (caught) {
+      error(
+        'Xatolik',
+        caught instanceof Error ? caught.message : 'Guruh holatini yangilab bo‘lmadi'
+      );
+    } finally {
+      setUpdatingGroupId(null);
+    }
+  };
+
   const handleExportGroups = () => {
     if (filteredGroups.length === 0) {
       info('Eksport', 'Eksport qilish uchun guruhlar topilmadi');
@@ -334,17 +356,32 @@ export const GroupsPage: React.FC = () => {
                   <span className="font-bold text-gray-900">{group.studentsCount}</span> / {group.maxStudents} o‘quvchi
                 </div>
 
-                <button
-                  type="button"
-                  onClick={e => {
-                    e.stopPropagation();
-                    setDeleteConfirm({ isOpen: true, group });
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
-                  title="O‘chirish"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={updatingGroupId === group.id}
+                    onClick={e => {
+                      e.stopPropagation();
+                      handleToggleGroupStatus(group);
+                    }}
+                    className="px-2 py-1 text-[11px] font-semibold text-[#5C42FD] hover:bg-purple-50 rounded-lg disabled:opacity-50"
+                  >
+                    {updatingGroupId === group.id
+                      ? 'Saqlanmoqda...'
+                      : group.status === 'active' ? 'Nofaol qilish' : 'Faollashtirish'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={e => {
+                      e.stopPropagation();
+                      setDeleteConfirm({ isOpen: true, group });
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                    title="O‘chirish"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
@@ -401,6 +438,16 @@ export const GroupsPage: React.FC = () => {
                         className="p-1.5 text-gray-400 hover:text-[#5C42FD] rounded-lg"
                       >
                         <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={updatingGroupId === group.id}
+                        onClick={() => handleToggleGroupStatus(group)}
+                        className="px-2 py-1 text-[11px] font-semibold text-[#5C42FD] hover:bg-purple-50 rounded-lg disabled:opacity-50"
+                      >
+                        {updatingGroupId === group.id
+                          ? 'Saqlanmoqda...'
+                          : group.status === 'active' ? 'Nofaol qilish' : 'Faollashtirish'}
                       </button>
                       <button
                         type="button"

@@ -118,7 +118,7 @@ export const TeacherProfilePage: React.FC = () => {
           <p className="text-xs text-slate-700 font-medium">{user?.department}</p>
 
           <div className="pt-2 flex flex-wrap gap-1.5 justify-center sm:justify-start">
-            {user?.subjects.map((sub, i) => (
+            {user?.subjects?.map((sub, i) => (
               <span
                 key={i}
                 className="px-2.5 py-1 rounded-md bg-slate-100 text-slate-700 text-[11px] font-medium"

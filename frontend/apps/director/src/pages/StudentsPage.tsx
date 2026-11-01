@@ -96,12 +96,11 @@ export const StudentsPage: React.FC = () => {
       setStudents(stu);
       setCourses(crs);
       setGroups(grp);
-      if (crs.length > 0 && !formData.courseId) {
-        setFormData(prev => ({
-          ...prev,
-          courseId: crs[0].id
-        }));
-      }
+      const activeCourses = crs.filter(course => course.status === 'active');
+      setFormData(prev => {
+        if (activeCourses.some(course => course.id === prev.courseId)) return prev;
+        return { ...prev, courseId: activeCourses[0]?.id || '', groupId: '' };
+      });
     } catch {
       error('Xatolik', 'O‘quvchilar ma’lumotini yuklashda xatolik yuz berdi');
     } finally {
@@ -153,7 +152,10 @@ export const StudentsPage: React.FC = () => {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-  const availableGroups = groups.filter(group => group.courseId === formData.courseId);
+  const availableCourses = courses.filter(course => course.status === 'active');
+  const availableGroups = groups.filter(
+    group => group.status === 'active' && group.courseId === formData.courseId
+  );
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -176,7 +178,7 @@ export const StudentsPage: React.FC = () => {
       return;
     }
 
-    const selectedCourse = courses.find(c => c.id === formData.courseId);
+    const selectedCourse = availableCourses.find(c => c.id === formData.courseId);
     const selectedGroup = availableGroups.find(g => g.id === formData.groupId);
     if (!selectedCourse || !selectedGroup) {
       error('Kurs va guruhni tanlang', 'Tanlangan kursga tegishli faol guruhni tanlang');
@@ -758,11 +760,18 @@ export const StudentsPage: React.FC = () => {
                 onChange={e => setFormData({ ...formData, courseId: e.target.value, groupId: '' })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Kursni tanlang</option>
-                {courses.map(c => (
+                <option value="">
+                  {availableCourses.length ? 'Kursni tanlang' : 'Faol kurs mavjud emas'}
+                </option>
+                {availableCourses.map(c => (
                   <option key={c.id} value={c.id}>{c.name}</option>
                 ))}
               </select>
+              {availableCourses.length === 0 && (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  Kurslar bo‘limidan kursni tahrirlab, holatini “Faol” qiling.
+                </p>
+              )}
             </div>
 
             <div>
@@ -775,11 +784,18 @@ export const StudentsPage: React.FC = () => {
                 onChange={e => setFormData({ ...formData, groupId: e.target.value })}
                 className="w-full bg-white border border-gray-200 focus:border-[#5C42FD] focus:ring-2 focus:ring-[#5C42FD]/15 rounded-xl px-3.5 py-2.5 text-xs text-gray-900 shadow-2xs focus:outline-hidden transition-all cursor-pointer"
               >
-                <option value="">Guruhni tanlang</option>
+                <option value="">
+                  {availableGroups.length ? 'Guruhni tanlang' : 'Bu kursda faol guruh mavjud emas'}
+                </option>
                 {availableGroups.map(g => (
                   <option key={g.id} value={g.id}>{g.name} ({g.teacherName})</option>
                 ))}
               </select>
+              {formData.courseId && availableCourses.length > 0 && availableGroups.length === 0 && (
+                <p className="mt-1 text-[11px] text-amber-700">
+                  Guruhlar bo‘limidan shu kurs guruhini faollashtiring yoki yangi guruh oching.
+                </p>
+              )}
             </div>
           </div>
 

@@ -17,6 +17,7 @@ export const TeacherSalaryPage: React.FC = () => {
   const { user } = useAuth();
   const [records, setRecords] = useState<TeacherSalaryRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSalary();
@@ -27,6 +28,14 @@ export const TeacherSalaryPage: React.FC = () => {
     try {
       const data = await teacherService.getSalaryInfo();
       setRecords(data);
+      setLoadError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      setLoadError(
+        message === 'Teacher salary details are restricted to the Director API.'
+          ? 'Oylik ma’lumotlari hozircha faqat direktor paneli orqali ko‘rsatiladi.'
+          : message || 'Maosh ma’lumotlarini yuklab bo‘lmadi.',
+      );
     } finally {
       setIsLoading(false);
     }
@@ -68,6 +77,11 @@ export const TeacherSalaryPage: React.FC = () => {
 
       {/* Salary Records List */}
       <div className="space-y-4">
+        {loadError && (
+          <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {loadError}
+          </div>
+        )}
         {records.map((record) => {
           const isPaid = record.status === 'paid';
           const isPending = record.status === 'pending';
