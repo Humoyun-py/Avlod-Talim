@@ -232,6 +232,35 @@ export const Attendance: React.FC = () => {
     }
   };
 
+  const createAndStartLesson = async (groupId: string) => {
+    const group = groups.find(item => item.id === groupId);
+    if (!group) throw new Error('Tanlangan guruh topilmadi.');
+
+    const today = new Date();
+    const date = [
+      today.getFullYear(),
+      String(today.getMonth() + 1).padStart(2, '0'),
+      String(today.getDate()).padStart(2, '0'),
+    ].join('-');
+    const lesson = await teacherService.createLesson({
+      group_id: groupId,
+      topic: `${group.name} amaliy mashg‘uloti`,
+      date,
+    });
+
+    setLessons(current => [...current, lesson]);
+    setSelectedLessonId(lesson.id);
+
+    const startedLesson = await teacherService.startLesson(lesson.id);
+    const updatedSchedule = await teacherService.getSchedule();
+    setLessons(updatedSchedule);
+    setSelectedLessonId(startedLesson.id);
+    setSuccessMessage(
+      `Guruh: "${startedLesson.group_name}". Yangi dars boshlandi, endi davomatni belgilang.`
+    );
+    await loadLessonStudentsAndAttendance(startedLesson.id, updatedSchedule, groupId);
+  };
+
   // "Darsni boshlash" (Start Lesson) action
   const handleStartLesson = async () => {
     if (!selectedGroupId) {
@@ -244,7 +273,10 @@ export const Attendance: React.FC = () => {
 
     try {
       const targetLessonId = selectedLessonId;
-      if (!targetLessonId) throw new Error('Davomat olishdan oldin jadvaldagi darsni tanlang.');
+      if (!targetLessonId) {
+        await createAndStartLesson(selectedGroupId);
+        return;
+      }
       const lesson = lessons.find(l => l.id === targetLessonId);
       if (!lesson) throw new Error('Tanlangan dars topilmadi.');
       if (lesson.status !== 'planned' && lesson.status !== 'in_progress') {
@@ -284,7 +316,7 @@ export const Attendance: React.FC = () => {
     setErrorMessage(null);
 
     try {
-      throw new Error('Yangi darsni boshlash endpointi mavjud emas. Direktor yoki administrator darsni jadvalga qo‘shishi kerak.');
+      await createAndStartLesson(selectedGroupId);
     } catch (err: any) {
       setErrorMessage(err.message || 'Keyingi darsni boshlashda xatolik yuz berdi.');
     } finally {
