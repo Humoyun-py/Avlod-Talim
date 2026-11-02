@@ -109,7 +109,7 @@ class MeView(APIView):
     serializer_class = UserSerializer
     def get(self, request): return Response(UserSerializer(request.user).data)
     def patch(self, request):
-        if set(request.data.keys()) - {"first_name", "last_name", "email", "phone"}:
+        if set(request.data.keys()) - {"first_name", "last_name", "phone"}:
             raise ValidationError({"detail": "Only profile fields may be updated"})
         serializer = UserSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)

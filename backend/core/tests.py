@@ -800,6 +800,8 @@ class ProfileUpdateTest(TestCase):
         self.assertEqual(response.status_code, 400)
         response = self.client.patch("/api/v1/auth/me/", {"is_active": False}, format="json")
         self.assertEqual(response.status_code, 400)
+        response = self.client.patch("/api/v1/auth/me/", {"email": "x@example.com"}, format="json")
+        self.assertEqual(response.status_code, 400)
         self.user.refresh_from_db()
         self.assertEqual(self.user.role, "teacher")
         self.assertTrue(self.user.is_active)
