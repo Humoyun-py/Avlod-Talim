@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.contrib.auth import authenticate
 from django.db import router, transaction
 from django.db.models.deletion import Collector
@@ -19,6 +19,28 @@ from .models import *
 from .permissions import RolePermission, StaffWritePermission
 from .serializers import *
 from .services import *
+
+def parse_int(value, field, default=None, minimum=None, maximum=None):
+    if value in (None, ""):
+        if default is None:
+            raise ValidationError({field: "This field is required."})
+        value = default
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        raise ValidationError({field: "A whole number is required."})
+    if (minimum is not None and number < minimum) or (maximum is not None and number > maximum):
+        raise ValidationError({field: "Value is out of range."})
+    return number
+
+def parse_decimal(value, field, minimum=Decimal("0.01"), maximum=None):
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValidationError({field: "A valid number is required."})
+    if not number.is_finite() or number < minimum or (maximum is not None and number > maximum):
+        raise ValidationError({field: "Value is out of range."})
+    return number
 
 @transaction.atomic
 def hard_delete(instance):
@@ -341,8 +363,11 @@ class PaymentViewSet(viewsets.ModelViewSet):
     filterset_fields = ["student", "method", "status"]
     def create(self, request, *args, **kwargs):
         if request.user.role not in ("director", "admin"): raise PermissionDenied()
-        student = User.objects.get(pk=request.data.get("student"), role="student")
-        payment = register_payment(student, Decimal(request.data["amount"]), request.data["method"], request.user, request.data.get("reference", ""), request.FILES.get("receipt"), request.data.get("notes", ""))
+        student = get_object_or_404(User, pk=parse_int(request.data.get("student"), "student"), role="student")
+        method = request.data.get("method")
+        if method not in TuitionPayment.Method.values: raise ValidationError({"method": "Unsupported payment method."})
+        amount = parse_decimal(request.data.get("amount"), "amount")
+        payment = register_payment(student, amount, method, request.user, request.data.get("reference", ""), request.FILES.get("receipt"), request.data.get("notes", ""))
         return Response(PaymentSerializer(payment).data, status=201)
     @action(detail=False, methods=["get"], url_path="verification-queue")
     def verification_queue(self, request):
@@ -516,16 +541,24 @@ class CoinView(APIView):
         return Response({"balance": coin_balance(student), "transactions": list(transactions)})
 
     def post(self, request):
-        student = get_object_or_404(User, pk=request.data.get("student"), role="student")
+        student = get_object_or_404(User, pk=parse_int(request.data.get("student"), "student"), role="student")
         if request.user.role not in ("director", "teacher") or (request.user.role == "teacher" and not GroupEnrollment.objects.filter(student=student, group__teacher=request.user, active=True).exists()): raise PermissionDenied()
-        row = award_coins(student, int(request.data["amount"]), request.user, request.data["reason"], request.data.get("reference", "")); return Response({"id": row.id, "amount": row.amount, "balance": coin_balance(student)}, status=201)
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason: raise ValidationError({"reason": "This field is required."})
+        amount = parse_int(request.data.get("amount"), "amount", minimum=1)
+        try: row = award_coins(student, amount, request.user, reason, request.data.get("reference", ""))
+        except ValueError as exc: raise ValidationError({"detail": str(exc)})
+        return Response({"id": row.id, "amount": row.amount, "balance": coin_balance(student)}, status=201)
 
 class PurchaseView(APIView):
     serializer_class = PurchaseSerializer
     def post(self, request):
         if request.user.role != "student": raise PermissionDenied("Only students can purchase from the shop")
         if not request.user.check_password(request.data.get("password", "")): raise ValidationError({"password": "Password confirmation failed"})
-        try: order = purchase_product(request.user, request.data.get("product"), int(request.data.get("quantity", 1)))
+        product_id = parse_int(request.data.get("product"), "product")
+        quantity = parse_int(request.data.get("quantity"), "quantity", default=1, minimum=1)
+        try: order = purchase_product(request.user, product_id, quantity)
+        except ShopProduct.DoesNotExist: raise ValidationError({"product": "Product not found."})
         except ValueError as exc: raise ValidationError({"detail": str(exc)})
         return Response({"id": order.id, "status": order.status}, status=201)
 
@@ -535,6 +568,7 @@ class ShopOrderViewSet(viewsets.ReadOnlyModelViewSet):
     roles = ("director", "admin", "student")
     requires_learning_access = False
     def get_queryset(self):
+        if getattr(self, "swagger_fake_view", False): return ShopOrder.objects.none()
         qs = ShopOrder.objects.select_related("student", "product", "decided_by").order_by("-created_at")
         return qs.filter(student=self.request.user) if self.request.user.role == "student" else qs
     def list(self, request, *args, **kwargs):
@@ -595,7 +629,8 @@ class ReportView(APIView):
     permission_classes = [RolePermission]
     roles = ("director", "admin")
     def get(self, request):
-        month, year = int(request.query_params.get("month", timezone.localdate().month)), int(request.query_params.get("year", timezone.localdate().year))
+        month = parse_int(request.query_params.get("month"), "month", default=timezone.localdate().month, minimum=1, maximum=12)
+        year = parse_int(request.query_params.get("year"), "year", default=timezone.localdate().year, minimum=2000, maximum=2100)
         teacher_id = request.query_params.get("teacher")
         course_id = request.query_params.get("course")
         group_id = request.query_params.get("group")
@@ -674,11 +709,12 @@ class SalaryView(APIView):
     permission_classes = [RolePermission]
     roles = ("director",)
     def get(self, request):
-        year, month = int(request.query_params.get("year", timezone.localdate().year)), int(request.query_params.get("month", timezone.localdate().month))
+        year = parse_int(request.query_params.get("year"), "year", default=timezone.localdate().year, minimum=2000, maximum=2100)
+        month = parse_int(request.query_params.get("month"), "month", default=timezone.localdate().month, minimum=1, maximum=12)
         rows = []
         teacher_filter = request.query_params.get("teacher")
         teachers = User.objects.filter(role="teacher", is_active=True).order_by("last_name", "first_name")
-        if teacher_filter: teachers = teachers.filter(pk=teacher_filter)
+        if teacher_filter: teachers = teachers.filter(pk=parse_int(teacher_filter, "teacher"))
         for teacher in teachers:
             period = calculate_salary(teacher, year, month)
             paid = period.payments.aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
@@ -688,8 +724,10 @@ class SalaryView(APIView):
                 "paid": str(paid), "remaining": str(period.calculated_salary-paid), "finalized": period.finalized, "period_id": period.pk})
         return Response(rows)
     def post(self, request):
-        teacher = get_object_or_404(User, pk=request.data.get("teacher"), role="teacher")
-        period = calculate_salary(teacher, int(request.data["year"]), int(request.data["month"]), finalize=True)
+        teacher = get_object_or_404(User, pk=parse_int(request.data.get("teacher"), "teacher"), role="teacher")
+        year = parse_int(request.data.get("year"), "year", minimum=2000, maximum=2100)
+        month = parse_int(request.data.get("month"), "month", minimum=1, maximum=12)
+        period = calculate_salary(teacher, year, month, finalize=True)
         return Response({"id": period.id, "teacher": teacher.get_full_name(), "calculated_salary": str(period.calculated_salary), "finalized": period.finalized})
 
 class SalaryPaymentView(APIView):
@@ -697,7 +735,7 @@ class SalaryPaymentView(APIView):
     permission_classes = [RolePermission]
     roles = ("director",)
     def post(self, request):
-        period = get_object_or_404(TeacherSalaryPeriod, pk=request.data.get("period"))
+        period = get_object_or_404(TeacherSalaryPeriod, pk=parse_int(request.data.get("period"), "period"))
         try:
             payment = pay_salary(period, Decimal(request.data.get("amount", "0")), request.user, request.data.get("reference", ""))
         except (ValueError, ArithmeticError) as exc:
@@ -748,7 +786,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         submission = self.get_object()
         if request.user.role not in ("director", "teacher") or (request.user.role == "teacher" and submission.assignment.lesson.teacher_id != request.user.pk):
             raise PermissionDenied()
-        if "score" in request.data: submission.score = request.data["score"]
+        if "score" in request.data: submission.score = parse_decimal(request.data["score"], "score", minimum=Decimal("0"), maximum=Decimal("9999.99"))
         if "feedback" in request.data: submission.feedback = request.data["feedback"]
         submission.reviewed_by = request.user
         submission.save(update_fields=["score", "feedback", "reviewed_by"])

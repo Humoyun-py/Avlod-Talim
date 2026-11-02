@@ -736,3 +736,49 @@ class FinancialActorProtectionTest(TestCase):
         with self.assertRaises(ProtectedError):
             admin.delete()
         self.assertTrue(FinancialTransaction.objects.filter(created_by=admin).exists())
+
+class InvalidInputTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        self.director = User.objects.create_user(username="director", password="DirectorPass123!", role="director")
+        self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_payment_rejects_unknown_student_bad_amount_and_unknown_method(self):
+        bad = [
+            {"student": 999999, "amount": "100", "method": "cash"},
+            {"student": "abc", "amount": "100", "method": "cash"},
+            {"student": self.student.pk, "amount": "abc", "method": "cash"},
+            {"student": self.student.pk, "amount": "-5", "method": "cash"},
+            {"student": self.student.pk, "amount": "100", "method": "bitcoin"},
+            {"student": self.student.pk, "method": "cash"},
+        ]
+        for payload in bad:
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/v1/payments/", payload, format="json")
+                self.assertIn(response.status_code, (400, 404))
+        self.assertFalse(TuitionPayment.objects.exists())
+
+    def test_coin_award_and_purchase_reject_malformed_input(self):
+        self.client.force_authenticate(self.director)
+        response = self.client.post("/api/v1/coins/", {"student": self.student.pk, "amount": "x", "reason": "r"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/coins/", {"student": self.student.pk, "amount": 5, "reason": ""}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.client.force_authenticate(self.student)
+        self.student.set_password("StudPass123!"); self.student.save()
+        response = self.client.post("/api/v1/shop/purchase/", {"password": "StudPass123!", "product": "x"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/shop/purchase/", {"password": "StudPass123!", "product": 424242}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_report_and_salary_query_params_are_validated(self):
+        self.client.force_authenticate(self.director)
+        self.assertEqual(self.client.get("/api/v1/reports/monthly/?month=13").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/reports/monthly/?year=abc").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/salaries/?month=0").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/salaries/?teacher=abc").status_code, 400)
+        teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.assertEqual(self.client.post("/api/v1/salaries/", {"teacher": teacher.pk, "year": 2026, "month": 13}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/v1/salaries/payments/", {"period": "abc", "amount": "1"}, format="json").status_code, 400)

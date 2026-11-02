@@ -2,6 +2,8 @@ import re
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
 from django.db.models import Sum
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 from .models import *
 from .services import audit, create_enrollment, register_payment
@@ -15,9 +17,11 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ["id", "username", "first_name", "last_name", "full_name", "email", "phone", "role", "student_id", "is_active", "tuition_restricted", "enrollments"]
         read_only_fields = ["id", "username", "role", "student_id", "is_active", "tuition_restricted"]
 
+    @extend_schema_field(OpenApiTypes.STR)
     def get_full_name(self, obj):
         return obj.get_full_name()
 
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_enrollments(self, obj):
         if obj.role != User.Role.STUDENT:
             return []
@@ -94,6 +98,7 @@ class GroupSerializer(serializers.ModelSerializer):
         model = TeachingGroup
         fields = ["id", "name", "course", "course_name", "teacher", "teacher_name", "active", "start_date", "end_date", "schedule", "student_ids", "enrollments"]
         read_only_fields = ["enrollments"]
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_enrollments(self, group):
         return [{"student": enrollment.student_id, "monthly_fee": enrollment.monthly_fee} for enrollment in group.enrollments.filter(active=True)]
     @transaction.atomic
@@ -125,6 +130,7 @@ class LessonSerializer(serializers.ModelSerializer):
     class Meta:
         model = Lesson
         fields = ["id", "course", "course_name", "group", "group_name", "month", "number", "title", "description", "scheduled_date", "status", "teacher", "is_demo", "topic_id"]
+    @extend_schema_field(OpenApiTypes.INT)
     def get_topic_id(self, obj):
         topic = obj.topics.first()
         return topic.pk if topic else None
@@ -176,6 +182,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         model = Assignment
         fields = ["id", "lesson", "lesson_data", "title", "description", "due_at", "created_by", "created_at"]
         read_only_fields = ["created_by", "created_at"]
+    @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lesson_data(self, obj):
         return {"group": obj.lesson.group_id, "group_name": obj.lesson.group.name, "course": obj.lesson.course_id}
 
