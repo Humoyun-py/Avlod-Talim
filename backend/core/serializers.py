@@ -178,9 +178,10 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 class AssignmentSerializer(serializers.ModelSerializer):
     lesson_data = serializers.SerializerMethodField()
+    submission_types = serializers.ListField(child=serializers.ChoiceField(choices=Assignment.SubmissionType.choices), allow_empty=False, default=default_submission_types)
     class Meta:
         model = Assignment
-        fields = ["id", "lesson", "lesson_data", "title", "description", "due_at", "created_by", "created_at"]
+        fields = ["id", "lesson", "lesson_data", "title", "description", "due_at", "submission_types", "created_by", "created_at"]
         read_only_fields = ["created_by", "created_at"]
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lesson_data(self, obj):
@@ -194,7 +195,7 @@ class QuizSerializer(serializers.ModelSerializer):
 class AssignmentSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssignmentSubmission
-        fields = ["id", "assignment", "student", "text", "file", "submitted_at", "score", "feedback", "reviewed_by"]
+        fields = ["id", "assignment", "student", "text", "github_url", "image", "submitted_at", "score", "feedback", "reviewed_by"]
         read_only_fields = ["student", "submitted_at", "score", "feedback", "reviewed_by"]
 
 class SimplePayloadSerializer(serializers.Serializer):

@@ -1,3 +1,5 @@
+import os
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.db import transaction
@@ -155,3 +157,25 @@ def submit_quiz(quiz, student, answers):
     attempt.passed, attempt.submitted_at = attempt.score_percent >= quiz.pass_percent, timezone.now()
     attempt.save(update_fields=["score_percent", "passed", "submitted_at"])
     return attempt
+
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+GITHUB_REPO_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$")
+
+def validate_submission(assignment, text, github_url, image):
+    """Return field errors for a student submission; empty dict means valid."""
+    types = set(assignment.submission_types)
+    errors = {}
+    if "text" in types:
+        if not text.strip(): errors["text"] = "Matn talab qilinadi."
+    elif text.strip(): errors["text"] = "Bu vazifa uchun matn talab qilinmaydi."
+    if "github_link" in types:
+        if not GITHUB_REPO_URL.match(github_url): errors["github_url"] = "To'g'ri GitHub havolasini kiriting (https://github.com/user/repo)."
+    elif github_url: errors["github_url"] = "Bu vazifa uchun GitHub havolasi talab qilinmaydi."
+    if image is not None:
+        if "image" not in types: errors["image"] = "Bu vazifa uchun rasm talab qilinmaydi."
+        elif os.path.splitext(image.name)[1].lower() not in IMAGE_EXTENSIONS: errors["image"] = "Faqat JPG, PNG yoki WEBP rasm yuklang."
+        elif image.size > MAX_UPLOAD_BYTES: errors["image"] = "Fayl hajmi 100 MB dan oshmasligi kerak."
+    elif "image" in types: errors["image"] = "Rasm talab qilinadi."
+    return errors
+

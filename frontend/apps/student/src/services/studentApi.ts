@@ -172,16 +172,36 @@ export const StudentApiService = {
   // -------------------------------------------------------------
 
   async getHomework(groupId: string): Promise<Homework[]> {
-    const { data } = await ApiClient.request<any>('/assignments/');
-    return (data.results || data).filter((a: any) => String(a.lesson_data?.group) === groupId).map((a: any) => ({ id: String(a.id), title: a.title, description: a.description, groupId, groupName: '', courseName: '', teacherName: '', assignedDate: a.created_at, deadline: a.due_at || '', maxScore: 100, status: 'Pending' }));
+    const [assignments, submissions] = await Promise.all([
+      ApiClient.request<any>('/assignments/'),
+      ApiClient.request<any>('/submissions/'),
+    ]);
+    const mine = new Map<string, any>((submissions.data.results || submissions.data).map((s: any) => [String(s.assignment), s]));
+    return (assignments.data.results || assignments.data)
+      .filter((a: any) => String(a.lesson_data?.group) === groupId)
+      .map((a: any) => {
+        const s = mine.get(String(a.id));
+        return {
+          id: String(a.id), title: a.title, description: a.description, groupId, groupName: '', courseName: '', teacherName: '',
+          assignedDate: a.created_at, deadline: a.due_at || '', maxScore: 100,
+          status: s ? 'Submitted' : 'Pending',
+          submissionTypes: a.submission_types || ['text'],
+          submission: s ? { submittedAt: s.submitted_at, textContent: s.text, githubUrl: s.github_url || undefined, imageUrl: s.image || undefined } : undefined,
+        } as Homework;
+      });
   },
 
   async submitHomework(
     homeworkId: string,
-    submission: { textContent: string; githubUrl?: string; previewUrl?: string }
+    submission: { textContent: string; githubUrl?: string; image?: File | null }
   ): Promise<Homework> {
-    const { data } = await ApiClient.request<any>('/submissions/', { method: 'POST', body: JSON.stringify({ assignment: Number(homeworkId), text: submission.textContent }) });
-    return { id: String(data.assignment), title: '', description: '', groupId: '', groupName: '', courseName: '', teacherName: '', assignedDate: '', deadline: '', maxScore: 100, status: 'Submitted', submission: { submittedAt: data.submitted_at, textContent: data.text } };
+    const form = new FormData();
+    form.append('assignment', homeworkId);
+    form.append('text', submission.textContent);
+    if (submission.githubUrl) form.append('github_url', submission.githubUrl);
+    if (submission.image) form.append('image', submission.image);
+    const { data } = await ApiClient.request<any>('/submissions/', { method: 'POST', body: form });
+    return { id: String(data.assignment), title: '', description: '', groupId: '', groupName: '', courseName: '', teacherName: '', assignedDate: '', deadline: '', maxScore: 100, status: 'Submitted', submission: { submittedAt: data.submitted_at, textContent: data.text, githubUrl: data.github_url || undefined, imageUrl: data.image || undefined } };
   },
 
   // -------------------------------------------------------------

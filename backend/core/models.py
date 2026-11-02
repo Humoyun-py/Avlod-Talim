@@ -248,11 +248,19 @@ class ShopOrder(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="shop_orders_decided")
 
+def default_submission_types():
+    return ["text"]
+
 class Assignment(models.Model):
+    class SubmissionType(models.TextChoices):
+        TEXT = "text", "Text"
+        IMAGE = "image", "Image"
+        GITHUB_LINK = "github_link", "GitHub link"
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="assignments")
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True)
     due_at = models.DateTimeField(null=True, blank=True)
+    submission_types = models.JSONField(default=default_submission_types)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignments_created")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -261,6 +269,8 @@ class AssignmentSubmission(models.Model):
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_submissions")
     text = models.TextField(blank=True)
     file = models.FileField(upload_to="submissions/", null=True, blank=True)
+    image = models.ImageField(upload_to="submissions/images/", null=True, blank=True)
+    github_url = models.URLField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
     score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)

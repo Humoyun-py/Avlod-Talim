@@ -778,9 +778,13 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         if assignment.lesson.status != Lesson.Status.COMPLETED or not assignment.lesson.group.enrollments.filter(student=request.user, active=True).exists():
             raise PermissionDenied("Assignment is not available to this student")
         if assignment.due_at and assignment.due_at < timezone.now(): raise ValidationError({"detail": "Assignment deadline has passed"})
-        if not request.data.get("text") and not request.FILES.get("file"): raise ValidationError({"detail": "Provide text or an uploaded file"})
+        text = request.data.get("text") or ""
+        github_url = (request.data.get("github_url") or "").strip()
+        image = request.FILES.get("image")
+        errors = validate_submission(assignment, text, github_url, image)
+        if errors: raise ValidationError(errors)
         submission, created = AssignmentSubmission.objects.update_or_create(assignment=assignment, student=request.user,
-            defaults={"text": request.data.get("text", ""), "file": request.FILES.get("file")})
+            defaults={"text": text, "github_url": github_url, "image": image})
         return Response(AssignmentSubmissionSerializer(submission).data, status=201 if created else 200)
     def partial_update(self, request, *args, **kwargs):
         submission = self.get_object()

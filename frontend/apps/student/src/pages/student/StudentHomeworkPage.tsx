@@ -32,7 +32,7 @@ export const StudentHomeworkPage: React.FC = () => {
   const [targetHw, setTargetHw] = useState<Homework | null>(null);
   const [solutionText, setSolutionText] = useState('');
   const [githubUrl, setGithubUrl] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const loadHomework = async () => {
@@ -57,22 +57,40 @@ export const StudentHomeworkPage: React.FC = () => {
     return () => window.removeEventListener('homework-updated', loadHomework);
   }, [student?.groupId]);
 
+  const MAX_IMAGE_BYTES = 100 * 1024 * 1024;
+  const requiredTypes = targetHw?.submissionTypes ?? ['text'];
+  const canSubmit =
+    (!requiredTypes.includes('text') || !!solutionText.trim()) &&
+    (!requiredTypes.includes('github_link') || !!githubUrl.trim()) &&
+    (!requiredTypes.includes('image') || !!imageFile);
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    if (file && file.size > MAX_IMAGE_BYTES) {
+      error('Xatolik', 'Fayl hajmi 100 MB dan oshmasligi kerak.');
+      e.target.value = '';
+      setImageFile(null);
+      return;
+    }
+    setImageFile(file);
+  };
+
   const handleSubmitHomework = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetHw || !solutionText.trim()) return;
+    if (!targetHw || !canSubmit) return;
 
     setSubmitting(true);
     try {
       await StudentApiService.submitHomework(targetHw.id, {
         textContent: solutionText,
         githubUrl: githubUrl.trim() || undefined,
-        previewUrl: previewUrl.trim() || undefined
+        image: imageFile,
       });
       success('Vazifa topshirildi!', `"${targetHw.title}" muvaffaqiyatli jo‘natildi.`);
       setSubmitModalOpen(false);
       setSolutionText('');
       setGithubUrl('');
-      setPreviewUrl('');
+      setImageFile(null);
       await loadHomework();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Vazifani yuborishda xatolik yuz berdi';
@@ -179,6 +197,15 @@ export const StudentHomeworkPage: React.FC = () => {
                     </p>
                   </div>
 
+                  {hw.submission.imageUrl && (
+                    <div>
+                      <span className="text-slate-400 font-medium block mb-1">Yuborilgan rasm:</span>
+                      <a href={hw.submission.imageUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-cyan-800 hover:underline font-semibold">
+                        <span>Rasmni ochish</span>
+                      </a>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-3 pt-1">
                     {hw.submission.githubUrl && (
                       <a
@@ -258,45 +285,53 @@ export const StudentHomeworkPage: React.FC = () => {
                 <p className="text-[11px] text-slate-500 mt-0.5">Muddat: {targetHw.deadline}</p>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Yechim tavsifi / Izohingiz *
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  value={solutionText}
-                  onChange={e => setSolutionText(e.target.value)}
-                  placeholder="Vazifani qanday bajardingiz, qanday kutubxona va usullardan foydalandingiz..."
-                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500 text-xs"
-                />
-              </div>
+              {requiredTypes.includes('text') && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Yechim tavsifi / Izohingiz *
+                  </label>
+                  <textarea
+                    rows={4}
+                    required
+                    value={solutionText}
+                    onChange={e => setSolutionText(e.target.value)}
+                    placeholder="Vazifani qanday bajardingiz..."
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500 text-xs"
+                  />
+                </div>
+              )}
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  GitHub Havolasi (URL)
-                </label>
-                <input
-                  type="url"
-                  value={githubUrl}
-                  onChange={e => setGithubUrl(e.target.value)}
-                  placeholder="https://github.com/username/project"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500 text-xs font-mono"
-                />
-              </div>
+              {requiredTypes.includes('github_link') && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    GitHub havolasi (URL) *
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={githubUrl}
+                    onChange={e => setGithubUrl(e.target.value)}
+                    placeholder="https://github.com/username/project"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500 text-xs font-mono"
+                  />
+                </div>
+              )}
 
-              <div>
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Jonli Namuna Havolasi (Vercel / Netlify / Render)
-                </label>
-                <input
-                  type="url"
-                  value={previewUrl}
-                  onChange={e => setPreviewUrl(e.target.value)}
-                  placeholder="https://my-app.vercel.app"
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-hidden focus:ring-1 focus:ring-cyan-500 text-xs font-mono"
-                />
-              </div>
+              {requiredTypes.includes('image') && (
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Rasm yuklang (JPG, PNG yoki WEBP, 100 MB gacha) *
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    required
+                    onChange={handleImageChange}
+                    className="w-full text-xs"
+                  />
+                  {imageFile && <p className="text-[11px] text-slate-500 mt-1">{imageFile.name}</p>}
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
                 <button
@@ -308,7 +343,7 @@ export const StudentHomeworkPage: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={submitting || !solutionText.trim()}
+                  disabled={submitting || !canSubmit}
                   className="px-4 py-2 text-xs font-bold bg-[#0F172A] hover:bg-slate-800 text-white rounded-xl shadow-xs disabled:opacity-50"
                 >
                   {submitting ? 'Topshirilmoqda...' : 'Vazifani topshirish'}
