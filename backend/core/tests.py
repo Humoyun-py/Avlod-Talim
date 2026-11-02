@@ -726,3 +726,13 @@ class DomainTestCase(TestCase):
         register_payment(self.student, Decimal("100"), "payme", self.admin, "private-pay")
         self.login(self.teacher)
         self.assertEqual(self.client.get("/api/v1/payments/").status_code, 403)
+
+class FinancialActorProtectionTest(TestCase):
+    def test_staff_with_ledger_records_cannot_be_deleted(self):
+        from django.db.models import ProtectedError
+        admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        register_payment(student, Decimal("100"), "cash", admin)
+        with self.assertRaises(ProtectedError):
+            admin.delete()
+        self.assertTrue(FinancialTransaction.objects.filter(created_by=admin).exists())
