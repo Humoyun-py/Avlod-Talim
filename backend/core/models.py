@@ -76,6 +76,7 @@ class CourseMonth(models.Model):
 class Lesson(models.Model):
     class Status(models.TextChoices):
         PLANNED = "planned", "Planned"
+        IN_PROGRESS = "in_progress", "In progress"
         COMPLETED = "completed", "Completed"
         CANCELLED = "cancelled", "Cancelled"
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="lessons")
@@ -144,8 +145,8 @@ class TuitionPayment(models.Model):
     receipt = models.FileField(upload_to="receipts/%Y/%m/", null=True, blank=True)
     reference = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
-    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="payments_received")
-    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="payments_reviewed")
+    received_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="payments_received")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="payments_reviewed")
     rejection_reason = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -165,7 +166,7 @@ class FinancialTransaction(models.Model):
     transaction_date = models.DateField(default=timezone.localdate)
     description = models.CharField(max_length=255, blank=True)
     reference = models.CharField(max_length=120, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="financial_transactions_created")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="financial_transactions_created")
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         indexes = [models.Index(fields=["student", "transaction_date"])]
@@ -187,7 +188,7 @@ class TeacherSalaryPayment(models.Model):
     period = models.ForeignKey(TeacherSalaryPeriod, on_delete=models.CASCADE, related_name="payments")
     amount = models.DecimalField(max_digits=14, decimal_places=2, validators=[MinValueValidator(Decimal("0.01"))])
     paid_at = models.DateTimeField(default=timezone.now)
-    paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="salary_payments_made")
+    paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="salary_payments_made")
     reference = models.CharField(max_length=120, blank=True)
 
 class CoinTransaction(models.Model):
@@ -195,7 +196,7 @@ class CoinTransaction(models.Model):
     amount = models.IntegerField()
     reason = models.CharField(max_length=255)
     reference = models.CharField(max_length=120, blank=True)
-    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="coins_awarded")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="coins_awarded")
     created_at = models.DateTimeField(auto_now_add=True)
     class Meta:
         constraints = [models.UniqueConstraint(fields=["reference"], condition=~models.Q(reference=""), name="uniq_coin_reference")]
@@ -245,7 +246,7 @@ class ShopOrder(models.Model):
     unit_price = models.PositiveIntegerField()
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
-    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="shop_orders_decided")
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="shop_orders_decided")
 
 class Assignment(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="assignments")

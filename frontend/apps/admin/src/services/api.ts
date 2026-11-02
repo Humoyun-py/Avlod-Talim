@@ -154,7 +154,7 @@ class ApiService {
   async updateProfile(profileData: { full_name?: string; email?: string; phone?: string }): Promise<User> {
     const current = await this.getMe();
     const [first_name, ...last] = (profileData.full_name || current.full_name || '').split(' ');
-    return this.request<User>('/auth/me/', { method: 'PATCH', body: JSON.stringify({ first_name, last_name: last.join(' '), email: profileData.email, phone: profileData.phone }) });
+    return this.request<User>('/auth/me/', { method: 'PATCH', body: JSON.stringify({ first_name, last_name: last.join(' '), phone: profileData.phone }) });
   }
 
   async changePassword(old_password: string, new_password: string): Promise<{ detail: string }> {
@@ -377,7 +377,7 @@ class ApiService {
   }): Promise<{ count: number; results: Payment[] }> {
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
-    if (params?.student_id) query.append('student_id', params.student_id);
+    if (params?.student_id) query.append('student', params.student_id);
     if (params?.method) query.append('method', params.method);
     if (params?.verification_status) query.append('status', params.verification_status);
     const page = await this.request<{ count: number; results: any[] }>(`/payments/?${query.toString()}`);

@@ -622,6 +622,55 @@ class DomainTestCase(TestCase):
         response = self.client.post("/api/v1/attendance/bulk/", {"lesson": 9999, "records": []}, format="json")
         self.assertEqual(response.status_code, 404)
 
+    def test_assigned_teacher_can_start_a_planned_lesson_idempotently(self):
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=self.group,
+            number=1,
+            title="Startable lesson",
+            teacher=self.teacher,
+            status=Lesson.Status.PLANNED,
+        )
+        self.login(self.teacher)
+
+        response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["status"], Lesson.Status.IN_PROGRESS)
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.Status.IN_PROGRESS)
+
+        repeated_response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+        self.assertEqual(repeated_response.status_code, 200, repeated_response.data)
+        self.assertEqual(repeated_response.data["status"], Lesson.Status.IN_PROGRESS)
+
+    def test_teacher_cannot_start_another_teachers_lesson(self):
+        other_teacher = User.objects.create_user(
+            username="other-teacher",
+            password="Unique-other-teacher-password-2026!",
+            role="teacher",
+        )
+        other_group = TeachingGroup.objects.create(
+            name="Other",
+            course=self.course,
+            teacher=other_teacher,
+        )
+        lesson = Lesson.objects.create(
+            course=self.course,
+            group=other_group,
+            number=1,
+            title="Other teacher lesson",
+            teacher=other_teacher,
+            status=Lesson.Status.PLANNED,
+        )
+        self.login(self.teacher)
+
+        response = self.client.post(f"/api/v1/lessons/{lesson.pk}/start/")
+
+        self.assertEqual(response.status_code, 404)
+        lesson.refresh_from_db()
+        self.assertEqual(lesson.status, Lesson.Status.PLANNED)
+
     def test_salary_endpoint_director_only(self):
         self.login(self.admin)
         self.assertEqual(self.client.get("/api/v1/salaries/").status_code, 403)
@@ -677,3 +726,82 @@ class DomainTestCase(TestCase):
         register_payment(self.student, Decimal("100"), "payme", self.admin, "private-pay")
         self.login(self.teacher)
         self.assertEqual(self.client.get("/api/v1/payments/").status_code, 403)
+
+class FinancialActorProtectionTest(TestCase):
+    def test_staff_with_ledger_records_cannot_be_deleted(self):
+        from django.db.models import ProtectedError
+        admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        register_payment(student, Decimal("100"), "cash", admin)
+        with self.assertRaises(ProtectedError):
+            admin.delete()
+        self.assertTrue(FinancialTransaction.objects.filter(created_by=admin).exists())
+
+class InvalidInputTest(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        self.director = User.objects.create_user(username="director", password="DirectorPass123!", role="director")
+        self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+
+    def test_payment_rejects_unknown_student_bad_amount_and_unknown_method(self):
+        bad = [
+            {"student": 999999, "amount": "100", "method": "cash"},
+            {"student": "abc", "amount": "100", "method": "cash"},
+            {"student": self.student.pk, "amount": "abc", "method": "cash"},
+            {"student": self.student.pk, "amount": "-5", "method": "cash"},
+            {"student": self.student.pk, "amount": "100", "method": "bitcoin"},
+            {"student": self.student.pk, "method": "cash"},
+        ]
+        for payload in bad:
+            with self.subTest(payload=payload):
+                response = self.client.post("/api/v1/payments/", payload, format="json")
+                self.assertIn(response.status_code, (400, 404))
+        self.assertFalse(TuitionPayment.objects.exists())
+
+    def test_coin_award_and_purchase_reject_malformed_input(self):
+        self.client.force_authenticate(self.director)
+        response = self.client.post("/api/v1/coins/", {"student": self.student.pk, "amount": "x", "reason": "r"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/coins/", {"student": self.student.pk, "amount": 5, "reason": ""}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.client.force_authenticate(self.student)
+        self.student.set_password("StudPass123!"); self.student.save()
+        response = self.client.post("/api/v1/shop/purchase/", {"password": "StudPass123!", "product": "x"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/shop/purchase/", {"password": "StudPass123!", "product": 424242}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_report_and_salary_query_params_are_validated(self):
+        self.client.force_authenticate(self.director)
+        self.assertEqual(self.client.get("/api/v1/reports/monthly/?month=13").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/reports/monthly/?year=abc").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/salaries/?month=0").status_code, 400)
+        self.assertEqual(self.client.get("/api/v1/salaries/?teacher=abc").status_code, 400)
+        teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.assertEqual(self.client.post("/api/v1/salaries/", {"teacher": teacher.pk, "year": 2026, "month": 13}, format="json").status_code, 400)
+        self.assertEqual(self.client.post("/api/v1/salaries/payments/", {"period": "abc", "amount": "1"}, format="json").status_code, 400)
+
+class ProfileUpdateTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_user_can_update_own_profile_fields(self):
+        response = self.client.patch("/api/v1/auth/me/", {"first_name": "Ali", "last_name": "Valiyev", "phone": "+998901234567"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.first_name, self.user.last_name, self.user.phone), ("Ali", "Valiyev", "+998901234567"))
+
+    def test_profile_update_rejects_role_or_activation_changes(self):
+        response = self.client.patch("/api/v1/auth/me/", {"role": "director"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch("/api/v1/auth/me/", {"is_active": False}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch("/api/v1/auth/me/", {"email": "x@example.com"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, "teacher")
+        self.assertTrue(self.user.is_active)
