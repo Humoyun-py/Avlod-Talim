@@ -782,3 +782,24 @@ class InvalidInputTest(TestCase):
         teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
         self.assertEqual(self.client.post("/api/v1/salaries/", {"teacher": teacher.pk, "year": 2026, "month": 13}, format="json").status_code, 400)
         self.assertEqual(self.client.post("/api/v1/salaries/payments/", {"period": "abc", "amount": "1"}, format="json").status_code, 400)
+
+class ProfileUpdateTest(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def test_user_can_update_own_profile_fields(self):
+        response = self.client.patch("/api/v1/auth/me/", {"first_name": "Ali", "last_name": "Valiyev", "phone": "+998901234567"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.first_name, self.user.last_name, self.user.phone), ("Ali", "Valiyev", "+998901234567"))
+
+    def test_profile_update_rejects_role_or_activation_changes(self):
+        response = self.client.patch("/api/v1/auth/me/", {"role": "director"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch("/api/v1/auth/me/", {"is_active": False}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.role, "teacher")
+        self.assertTrue(self.user.is_active)

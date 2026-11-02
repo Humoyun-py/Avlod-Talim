@@ -377,7 +377,7 @@ class ApiService {
   }): Promise<{ count: number; results: Payment[] }> {
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
-    if (params?.student_id) query.append('student_id', params.student_id);
+    if (params?.student_id) query.append('student', params.student_id);
     if (params?.method) query.append('method', params.method);
     if (params?.verification_status) query.append('status', params.verification_status);
     const page = await this.request<{ count: number; results: any[] }>(`/payments/?${query.toString()}`);
