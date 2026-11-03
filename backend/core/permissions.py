@@ -9,7 +9,12 @@ class RolePermission(BasePermission):
         if user.role == "student" and user.tuition_restricted and getattr(view, "requires_learning_access", True):
             return False
         allowed = getattr(view, "roles", self.roles)
-        return not allowed or user.role in allowed
+        if allowed and user.role not in allowed:
+            return False
+        write_roles = getattr(view, "write_roles", None)
+        if write_roles is not None and request.method not in SAFE_METHODS:
+            return user.role in write_roles
+        return True
 
 class StaffWritePermission(RolePermission):
     def has_permission(self, request, view):

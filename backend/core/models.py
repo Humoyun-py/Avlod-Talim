@@ -274,7 +274,7 @@ class AssignmentSubmission(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True)
     score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)
-    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name="submissions_reviewed")
+    reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="submissions_reviewed")
     class Meta:
         constraints = [models.UniqueConstraint(fields=["assignment", "student"], name="uniq_assignment_submission")]
 
@@ -320,7 +320,7 @@ class Notification(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class AuditLog(models.Model):
-    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name="audit_events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="audit_events")
     action = models.CharField(max_length=80)
     object_type = models.CharField(max_length=80)
     object_id = models.CharField(max_length=80)
