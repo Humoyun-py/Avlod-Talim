@@ -805,3 +805,201 @@ class ProfileUpdateTest(TestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.role, "teacher")
         self.assertTrue(self.user.is_active)
+
+class SubmissionTypesTest(TestCase):
+    def setUp(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.SimpleUploadedFile = SimpleUploadedFile
+        self.teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        course = Course.objects.create(name="Design", duration_months=2, monthly_fee=Decimal("100000"))
+        group = TeachingGroup.objects.create(name="D1", course=course, teacher=self.teacher)
+        GroupEnrollment.objects.create(student=self.student, group=group, monthly_fee=Decimal("100000"))
+        lesson = Lesson.objects.create(course=course, group=group, number=1, title="Draw", teacher=self.teacher, status="completed")
+        self.client = APIClient()
+        self.client.force_authenticate(self.student)
+        self.lesson = lesson
+
+    def make_assignment(self, types):
+        return Assignment.objects.create(lesson=self.lesson, title="HW", created_by=self.teacher, submission_types=types)
+
+    def image(self, name="work.png", size=1024):
+        return self.SimpleUploadedFile(name, b"\x89PNG" + b"0" * size, content_type="image/png")
+
+    def test_text_and_image_assignment_requires_both(self):
+        assignment = self.make_assignment(["text", "image"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine"}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("image", response.data)
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "image": self.image()}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["image"])
+
+    def test_programming_assignment_requires_valid_github_link(self):
+        assignment = self.make_assignment(["text", "github_link"])
+        for bad in ["", "not a url", "https://example.com/x/y", "https://github.com/onlyuser"]:
+            with self.subTest(url=bad):
+                response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Notes", "github_url": bad}, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("github_url", response.data)
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Notes", "github_url": "https://github.com/student/project"}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["github_url"], "https://github.com/student/project")
+
+    def test_disallowed_types_are_rejected(self):
+        assignment = self.make_assignment(["text"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "github_url": "https://github.com/a/b"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("github_url", response.data)
+
+    def test_image_type_and_size_limits(self):
+        assignment = self.make_assignment(["image"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "image": self.SimpleUploadedFile("x.exe", b"MZ", content_type="application/octet-stream")}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("image", response.data)
+        with patch("core.services.MAX_UPLOAD_BYTES", 100):
+            response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "image": self.image(size=500)}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("image", response.data)
+
+    def test_teacher_can_set_submission_types_and_rejects_unknown_type(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Poster", "submission_types": ["image", "text"]}, format="json")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["submission_types"], ["image", "text"])
+        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Bad", "submission_types": ["video"]}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+class AuthorizationAndIntegrityRegressionTest(TestCase):
+    def setUp(self):
+        self.director = User.objects.create_user(username="director", password="DirectorPass123!", role="director")
+        self.admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        self.teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.other_teacher = User.objects.create_user(username="teacher2", password="TeacherPass123!", role="teacher")
+        self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        self.other_student = User.objects.create_user(username="student-87654321", password="OtherPass123!", role="student", student_id="87654321")
+        self.course = Course.objects.create(name="Math", duration_months=4, monthly_fee=Decimal("300000"))
+        self.group = TeachingGroup.objects.create(name="A", course=self.course, teacher=self.teacher)
+        GroupEnrollment.objects.create(student=self.student, group=self.group, monthly_fee=Decimal("300000"))
+        self.lesson = Lesson.objects.create(course=self.course, group=self.group, number=1, title="Intro", teacher=self.teacher, status="completed")
+        self.client = APIClient()
+
+    def test_student_cannot_edit_or_delete_groups_lessons_or_assignments(self):
+        assignment = Assignment.objects.create(lesson=self.lesson, title="HW", created_by=self.teacher)
+        self.client.force_authenticate(self.student)
+        self.assertEqual(self.client.patch(f"/api/v1/groups/{self.group.pk}/", {"name": "Hacked"}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(f"/api/v1/lessons/{self.lesson.pk}/").status_code, 403)
+        self.assertEqual(self.client.patch(f"/api/v1/assignments/{assignment.pk}/", {"title": "Hacked"}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(f"/api/v1/assignments/{assignment.pk}/").status_code, 403)
+        self.assertEqual(self.client.post(f"/api/v1/lessons/{self.lesson.pk}/mark-taught/", {"topic_id": 1}, format="json").status_code, 403)
+        self.assertTrue(Lesson.objects.filter(pk=self.lesson.pk).exists())
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.name, "A")
+
+    def test_teacher_cannot_create_groups_or_reassign_group_teacher(self):
+        self.client.force_authenticate(self.teacher)
+        response = self.client.post("/api/v1/groups/", {"name": "B", "course": self.course.pk, "teacher": self.teacher.pk}, format="json")
+        self.assertEqual(response.status_code, 403)
+        response = self.client.patch(f"/api/v1/groups/{self.group.pk}/", {"teacher": self.other_teacher.pk}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.group.refresh_from_db()
+        self.assertEqual(self.group.teacher_id, self.teacher.pk)
+
+    def test_teacher_cannot_move_lesson_or_assignment_to_another_teacher(self):
+        other_group = TeachingGroup.objects.create(name="Other", course=self.course, teacher=self.other_teacher)
+        other_lesson = Lesson.objects.create(course=self.course, group=other_group, number=1, title="Their", teacher=self.other_teacher)
+        assignment = Assignment.objects.create(lesson=self.lesson, title="HW", created_by=self.teacher)
+        self.client.force_authenticate(self.teacher)
+        response = self.client.patch(f"/api/v1/lessons/{self.lesson.pk}/", {"teacher": self.other_teacher.pk}, format="json")
+        self.assertEqual(response.status_code, 403)
+        response = self.client.patch(f"/api/v1/assignments/{assignment.pk}/", {"lesson": other_lesson.pk}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.lesson.refresh_from_db(); assignment.refresh_from_db()
+        self.assertEqual(self.lesson.teacher_id, self.teacher.pk)
+        self.assertEqual(assignment.lesson_id, self.lesson.pk)
+
+    def test_lesson_with_wrong_teacher_is_not_created(self):
+        self.client.force_authenticate(self.director)
+        payload = {"course": self.course.pk, "group": self.group.pk, "number": 2, "title": "Mismatch", "teacher": self.other_teacher.pk}
+        response = self.client.post("/api/v1/lessons/", payload, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Lesson.objects.filter(title="Mismatch").exists())
+
+    def test_adding_already_enrolled_student_returns_400_not_500(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f"/api/v1/groups/{self.group.pk}/students/", {"student_ids": [self.student.pk]}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.patch(f"/api/v1/groups/{self.group.pk}/", {"student_ids": [self.student.pk]}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_group_patch_with_student_ids_enrolls_each_student_once(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(f"/api/v1/groups/{self.group.pk}/", {"student_ids": [self.other_student.pk]}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(GroupEnrollment.objects.filter(student=self.other_student, group=self.group, active=True).count(), 1)
+
+    def test_malformed_student_ids_return_400(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f"/api/v1/groups/{self.group.pk}/students/", {"student_ids": ["abc"]}, format="json")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/groups/enrollments/", {"group": self.group.pk, "student_ids": "abc"}, format="json")
+        self.assertEqual(response.status_code, 400)
+
+    def test_payment_review_twice_returns_400(self):
+        payment = register_payment(self.student, Decimal("100000"), "click", self.admin, "click-1")
+        self.client.force_authenticate(self.director)
+        self.assertEqual(self.client.post(f"/api/v1/payments/{payment.pk}/approve/", {}, format="json").status_code, 200)
+        self.assertEqual(self.client.post(f"/api/v1/payments/{payment.pk}/approve/", {}, format="json").status_code, 400)
+        self.assertEqual(FinancialTransaction.objects.filter(payment=payment).count(), 1)
+
+    def test_duplicate_payment_and_coin_references_return_400(self):
+        self.client.force_authenticate(self.admin)
+        payload = {"student": self.student.pk, "amount": "100000", "method": "cash", "reference": "REF-1"}
+        self.assertEqual(self.client.post("/api/v1/payments/", payload, format="json").status_code, 201)
+        self.assertEqual(self.client.post("/api/v1/payments/", payload, format="json").status_code, 400)
+        self.client.force_authenticate(self.director)
+        coin = {"student": self.student.pk, "amount": 5, "reason": "Good", "reference": "COIN-1"}
+        self.assertEqual(self.client.post("/api/v1/coins/", coin, format="json").status_code, 201)
+        self.assertEqual(self.client.post("/api/v1/coins/", coin, format="json").status_code, 400)
+
+    def test_weak_new_password_returns_400_not_500(self):
+        self.client.force_authenticate(self.student)
+        response = self.client.post("/api/v1/auth/password/change/", {"old_password": "StudPass123!", "new_password": "123"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password("StudPass123!"))
+
+    def test_graded_submission_cannot_be_overwritten_by_student(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        assignment = Assignment.objects.create(lesson=self.lesson, title="HW", created_by=self.teacher)
+        submission = AssignmentSubmission.objects.create(assignment=assignment, student=self.student, text="First", score=Decimal("90"))
+        self.client.force_authenticate(self.student)
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Changed"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        submission.refresh_from_db()
+        self.assertEqual(submission.text, "First")
+
+class StaffScopeAndDeletionRegressionTest(TestCase):
+    def setUp(self):
+        self.director = User.objects.create_user(username="director", password="DirectorPass123!", role="director")
+        self.admin = User.objects.create_user(username="admin", password="AdminPass123!", role="admin")
+        self.teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
+        self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        self.client = APIClient()
+
+    def test_admin_cannot_list_director_or_admin_accounts(self):
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get("/api/v1/students/?role=director").data["count"], 0)
+        self.assertEqual(self.client.get("/api/v1/students/?role=admin").data["count"], 0)
+
+    def test_deleting_staff_with_financial_history_returns_400_not_500(self):
+        CoinTransaction.objects.create(student=self.student, amount=5, reason="Good", created_by=self.teacher)
+        self.client.force_authenticate(self.director)
+        response = self.client.delete(f"/api/v1/students/{self.teacher.pk}/?role=teacher")
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(User.objects.filter(pk=self.teacher.pk).exists())
+
+    def test_deleting_audited_user_keeps_audit_trail(self):
+        AuditLog.objects.create(actor=self.admin, action="test.event", object_type="User", object_id="1")
+        self.admin.delete()
+        self.assertTrue(AuditLog.objects.filter(action="test.event", actor__isnull=True).exists())

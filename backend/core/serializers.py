@@ -101,17 +101,18 @@ class GroupSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_enrollments(self, group):
         return [{"student": enrollment.student_id, "monthly_fee": enrollment.monthly_fee} for enrollment in group.enrollments.filter(active=True)]
+    def validate_teacher(self, teacher):
+        if teacher.role != "teacher" or not teacher.is_active:
+            raise serializers.ValidationError("Select an active teacher")
+        return teacher
     @transaction.atomic
     def create(self, data):
         student_ids = data.pop("student_ids", [])
-        teacher = data["teacher"]
-        if teacher.role != "teacher" or not teacher.is_active:
-            raise serializers.ValidationError({"teacher": "Select an active teacher"})
         group = TeachingGroup.objects.create(**data)
         students = list(User.objects.filter(pk__in=student_ids, role="student", is_active=True))
         if len(students) != len(set(student_ids)):
             raise serializers.ValidationError({"student_ids": "One or more students are invalid"})
-        create_enrollment(group, students, self.context["request"].user)
+        self.enroll(group, students)
         return group
     def update(self, instance, data):
         student_ids = data.pop("student_ids", None)
@@ -120,8 +121,13 @@ class GroupSerializer(serializers.ModelSerializer):
             students = list(User.objects.filter(pk__in=student_ids, role="student", is_active=True))
             if len(students) != len(set(student_ids)):
                 raise serializers.ValidationError({"student_ids": "One or more students are invalid"})
-            create_enrollment(instance, students, self.context["request"].user)
+            self.enroll(instance, students)
         return instance
+    def enroll(self, group, students):
+        try:
+            create_enrollment(group, students, self.context["request"].user)
+        except ValueError as exc:
+            raise serializers.ValidationError({"student_ids": str(exc)})
 
 class LessonSerializer(serializers.ModelSerializer):
     group_name = serializers.CharField(source="group.name", read_only=True)
@@ -178,9 +184,10 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 class AssignmentSerializer(serializers.ModelSerializer):
     lesson_data = serializers.SerializerMethodField()
+    submission_types = serializers.ListField(child=serializers.ChoiceField(choices=Assignment.SubmissionType.choices), allow_empty=False, default=default_submission_types)
     class Meta:
         model = Assignment
-        fields = ["id", "lesson", "lesson_data", "title", "description", "due_at", "created_by", "created_at"]
+        fields = ["id", "lesson", "lesson_data", "title", "description", "due_at", "submission_types", "created_by", "created_at"]
         read_only_fields = ["created_by", "created_at"]
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_lesson_data(self, obj):
@@ -194,7 +201,7 @@ class QuizSerializer(serializers.ModelSerializer):
 class AssignmentSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = AssignmentSubmission
-        fields = ["id", "assignment", "student", "text", "file", "submitted_at", "score", "feedback", "reviewed_by"]
+        fields = ["id", "assignment", "student", "text", "github_url", "image", "submitted_at", "score", "feedback", "reviewed_by"]
         read_only_fields = ["student", "submitted_at", "score", "feedback", "reviewed_by"]
 
 class SimplePayloadSerializer(serializers.Serializer):

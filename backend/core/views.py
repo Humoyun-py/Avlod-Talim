@@ -1,9 +1,10 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from django.contrib.auth import authenticate
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import router, transaction
 from django.db.models.deletion import Collector
-from django.db.models import Sum, Count, Q
+from django.db.models import ProtectedError, Sum, Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets, filters
@@ -33,6 +34,11 @@ def parse_int(value, field, default=None, minimum=None, maximum=None):
         raise ValidationError({field: "Value is out of range."})
     return number
 
+def parse_ids(values, field):
+    if not isinstance(values, list):
+        raise ValidationError({field: "A list of IDs is required."})
+    return [parse_int(value, field) for value in values]
+
 def parse_decimal(value, field, minimum=Decimal("0.01"), maximum=None):
     try:
         number = Decimal(str(value))
@@ -46,7 +52,10 @@ def parse_decimal(value, field, minimum=Decimal("0.01"), maximum=None):
 def hard_delete(instance):
     using = router.db_for_write(instance.__class__, instance=instance)
     collector = Collector(using=using)
-    collector.collect([instance])
+    try:
+        collector.collect([instance])
+    except ProtectedError:
+        raise ValidationError({"detail": "This record is linked to financial history and cannot be deleted."})
 
     related_objects = [
         (model, [obj.pk for obj in objects])
@@ -123,7 +132,8 @@ class PasswordChangeView(APIView):
             raise ValidationError({"old_password": "Incorrect password"})
         password = request.data.get("new_password", "")
         from django.contrib.auth.password_validation import validate_password
-        validate_password(password, request.user)
+        try: validate_password(password, request.user)
+        except DjangoValidationError as exc: raise ValidationError({"new_password": list(exc.messages)})
         request.user.set_password(password); request.user.save(update_fields=["password"])
         audit(request.user, "password.changed", request.user)
         return Response({"detail": "Password updated"})
@@ -138,12 +148,9 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False): return User.objects.none()
         role = self.request.query_params.get("role", "student")
-        if role == "teacher":
-            role = "teacher"
-        queryset = User.objects.filter(role=role).prefetch_related("enrollments__group__course", "enrollments__group__teacher")
-        if self.request.user.role == "admin" and role == "teacher":
+        if self.request.user.role == "admin" and role != "student":
             return User.objects.none()
-        return queryset
+        return User.objects.filter(role=role).prefetch_related("enrollments__group__course", "enrollments__group__teacher")
     def get_serializer_class(self):
         return StudentCreateSerializer if self.action == "create" and self.request.data.get("role", "student") == "student" else TeacherCreateSerializer if self.action == "create" and self.request.data.get("role") == "teacher" else UserSerializer
     def create(self, request, *args, **kwargs):
@@ -220,6 +227,7 @@ class GroupViewSet(viewsets.ModelViewSet):
     permission_classes = [RolePermission]
     filterset_fields = ["course", "teacher", "active"]
     roles = ("director", "admin", "teacher", "student")
+    write_roles = ("director", "admin")
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False): return TeachingGroup.objects.none()
         qs = TeachingGroup.objects.select_related("course", "teacher").prefetch_related("enrollments__student").order_by("id")
@@ -234,12 +242,6 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = serializer.save(); audit(self.request.user, "group.created", group)
     def perform_update(self, serializer):
         group = serializer.save()
-        if "student_ids" in self.request.data:
-            ids = [int(value) for value in self.request.data.get("student_ids", [])]
-            students = list(User.objects.filter(pk__in=ids, role="student", is_active=True))
-            if len(students) != len(set(ids)):
-                raise ValidationError({"student_ids": "One or more students are invalid"})
-            create_enrollment(group, students, self.request.user)
         audit(self.request.user, "group.updated", group)
     def destroy(self, request, *args, **kwargs):
         if request.user.role != "director":
@@ -252,11 +254,12 @@ class GroupViewSet(viewsets.ModelViewSet):
         if request.method == "POST":
             if request.user.role not in ("director", "admin"):
                 raise PermissionDenied()
-            ids = request.data.get("student_ids", [])
+            ids = parse_ids(request.data.get("student_ids", []), "student_ids")
             students = list(User.objects.filter(pk__in=ids, role="student", is_active=True))
             if len(students) != len(set(ids)):
                 raise ValidationError({"student_ids": "One or more students are invalid"})
-            create_enrollment(group, students, request.user)
+            try: create_enrollment(group, students, request.user)
+            except ValueError as exc: raise ValidationError({"student_ids": str(exc)})
             return Response({"group_id": group.pk, "enrolled_count": len(students)}, status=201)
         return Response(UserSerializer(User.objects.filter(enrollments__group=group, enrollments__active=True), many=True).data)
 
@@ -265,11 +268,12 @@ class GroupViewSet(viewsets.ModelViewSet):
         group = get_object_or_404(TeachingGroup, pk=request.data.get("group"))
         if request.user.role not in ("director", "admin"):
             raise PermissionDenied()
-        ids = request.data.get("student_ids", [])
+        ids = parse_ids(request.data.get("student_ids", []), "student_ids")
         students = list(User.objects.filter(pk__in=ids, role="student", is_active=True))
         if len(students) != len(set(ids)):
             raise ValidationError({"student_ids": "One or more students are invalid"})
-        enrollments = create_enrollment(group, students, request.user)
+        try: enrollments = create_enrollment(group, students, request.user)
+        except ValueError as exc: raise ValidationError({"student_ids": str(exc)})
         return Response({"group_id": group.pk, "enrolled_count": len(enrollments)}, status=201)
 
     @action(detail=False, methods=["post"], url_path="enrollments/remove")
@@ -285,6 +289,7 @@ class LessonViewSet(viewsets.ModelViewSet):
     serializer_class = LessonSerializer
     permission_classes = [RolePermission]
     roles = ("director", "admin", "teacher", "student")
+    write_roles = ("director", "admin", "teacher")
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False): return Lesson.objects.none()
         qs = Lesson.objects.select_related("course", "group", "teacher").prefetch_related("topics")
@@ -292,15 +297,21 @@ class LessonViewSet(viewsets.ModelViewSet):
         if user.role == "teacher": qs = qs.filter(teacher=user)
         if user.role == "student": qs = qs.filter(group__enrollments__student=user, group__enrollments__active=True, status=Lesson.Status.COMPLETED).distinct()
         return qs
+    def check_lesson_owner(self, group, teacher):
+        if self.request.user.role == "teacher" and (group.teacher_id != self.request.user.pk or teacher.pk != self.request.user.pk):
+            raise PermissionDenied("You can manage lessons only for your assigned groups")
+        if group.teacher_id != teacher.pk: raise PermissionDenied("Lesson teacher must be assigned to the group")
     def perform_create(self, serializer):
-        if self.request.user.role not in ("director", "admin", "teacher"):
-            raise PermissionDenied()
-        if self.request.user.role == "teacher" and not TeachingGroup.objects.filter(pk=self.request.data.get("group"), teacher=self.request.user).exists():
-            raise PermissionDenied("You can create lessons only for your assigned groups")
-        lesson = serializer.save(teacher=self.request.user if self.request.user.role == "teacher" else serializer.validated_data.get("teacher"))
-        if lesson.group.teacher_id != lesson.teacher_id: raise PermissionDenied("Lesson teacher must be assigned to the group")
+        teacher = self.request.user if self.request.user.role == "teacher" else serializer.validated_data.get("teacher")
+        self.check_lesson_owner(serializer.validated_data["group"], teacher)
+        lesson = serializer.save(teacher=teacher)
         if lesson.title:
             LessonTopic.objects.get_or_create(lesson=lesson, title=lesson.title)
+    def perform_update(self, serializer):
+        group = serializer.validated_data.get("group", serializer.instance.group)
+        teacher = serializer.validated_data.get("teacher", serializer.instance.teacher)
+        self.check_lesson_owner(group, teacher)
+        serializer.save()
     @action(detail=True, methods=["post"], url_path="start")
     def start(self, request, pk=None):
         if request.user.role != "teacher":
@@ -367,7 +378,8 @@ class PaymentViewSet(viewsets.ModelViewSet):
         method = request.data.get("method")
         if method not in TuitionPayment.Method.values: raise ValidationError({"method": "Unsupported payment method."})
         amount = parse_decimal(request.data.get("amount"), "amount")
-        payment = register_payment(student, amount, method, request.user, request.data.get("reference", ""), request.FILES.get("receipt"), request.data.get("notes", ""))
+        try: payment = register_payment(student, amount, method, request.user, request.data.get("reference", ""), request.FILES.get("receipt"), request.data.get("notes", ""))
+        except ValueError as exc: raise ValidationError({"reference": str(exc)})
         return Response(PaymentSerializer(payment).data, status=201)
     @action(detail=False, methods=["get"], url_path="verification-queue")
     def verification_queue(self, request):
@@ -379,11 +391,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def approve(self, request, pk=None):
         if request.user.role not in ("director", "admin"): raise PermissionDenied()
-        return Response(PaymentSerializer(review_payment(self.get_object(), request.user, True)).data)
+        try: return Response(PaymentSerializer(review_payment(self.get_object(), request.user, True)).data)
+        except ValueError as exc: raise ValidationError({"status": str(exc)})
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
         if request.user.role not in ("director", "admin"): raise PermissionDenied()
-        return Response(PaymentSerializer(review_payment(self.get_object(), request.user, False, request.data.get("reason", ""))).data)
+        try: return Response(PaymentSerializer(review_payment(self.get_object(), request.user, False, request.data.get("reason", ""))).data)
+        except ValueError as exc: raise ValidationError({"status": str(exc)})
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = ShopProduct.objects.all()
@@ -747,6 +761,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
     serializer_class = AssignmentSerializer
     permission_classes = [RolePermission]
     roles = ("director", "admin", "teacher", "student")
+    write_roles = ("director", "admin", "teacher")
     def get_serializer_class(self):
         return AssignmentSerializer
     def get_queryset(self):
@@ -754,11 +769,14 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         if self.request.user.role == "teacher": return qs.filter(lesson__teacher=self.request.user)
         if self.request.user.role == "student": return qs.filter(lesson__group__enrollments__student=self.request.user, lesson__status="completed").distinct()
         return qs
-    def perform_create(self, serializer):
-        if self.request.user.role not in ("director", "admin", "teacher"): raise PermissionDenied()
-        lesson = serializer.validated_data["lesson"]
+    def check_lesson_owner(self, lesson):
         if self.request.user.role == "teacher" and lesson.teacher_id != self.request.user.pk: raise PermissionDenied()
+    def perform_create(self, serializer):
+        self.check_lesson_owner(serializer.validated_data["lesson"])
         serializer.save(created_by=self.request.user)
+    def perform_update(self, serializer):
+        self.check_lesson_owner(serializer.validated_data.get("lesson", serializer.instance.lesson))
+        serializer.save()
 
 class SubmissionViewSet(viewsets.ModelViewSet):
     serializer_class = AssignmentSubmissionSerializer
@@ -778,9 +796,15 @@ class SubmissionViewSet(viewsets.ModelViewSet):
         if assignment.lesson.status != Lesson.Status.COMPLETED or not assignment.lesson.group.enrollments.filter(student=request.user, active=True).exists():
             raise PermissionDenied("Assignment is not available to this student")
         if assignment.due_at and assignment.due_at < timezone.now(): raise ValidationError({"detail": "Assignment deadline has passed"})
-        if not request.data.get("text") and not request.FILES.get("file"): raise ValidationError({"detail": "Provide text or an uploaded file"})
+        text = request.data.get("text") or ""
+        github_url = (request.data.get("github_url") or "").strip()
+        image = request.FILES.get("image")
+        errors = validate_submission(assignment, text, github_url, image)
+        if errors: raise ValidationError(errors)
+        if AssignmentSubmission.objects.filter(assignment=assignment, student=request.user, score__isnull=False).exists():
+            raise ValidationError({"detail": "This submission has already been graded and can no longer be changed."})
         submission, created = AssignmentSubmission.objects.update_or_create(assignment=assignment, student=request.user,
-            defaults={"text": request.data.get("text", ""), "file": request.FILES.get("file")})
+            defaults={"text": text, "github_url": github_url, "image": image})
         return Response(AssignmentSubmissionSerializer(submission).data, status=201 if created else 200)
     def partial_update(self, request, *args, **kwargs):
         submission = self.get_object()

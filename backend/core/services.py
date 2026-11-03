@@ -1,9 +1,11 @@
+import os
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
-from .models import AuditLog, AttendanceRecord, CoinTransaction, FinancialTransaction, GroupEnrollment, Lesson, QuizAnswer, QuizAttempt, QuizOption, ShopOrder, ShopProduct, TeacherSalaryPeriod, TeacherSalaryPayment, TuitionPayment
+from .models import AuditLog, AttendanceRecord, CoinTransaction, FinancialTransaction, GroupEnrollment, Lesson, QuizAnswer, QuizAttempt, QuizOption, ShopOrder, ShopProduct, TeacherSalaryPeriod, TeacherSalaryPayment, TuitionPayment, User
 
 def audit(actor, action, obj, metadata=None):
     AuditLog.objects.create(actor=actor, action=action, object_type=obj.__class__.__name__, object_id=str(obj.pk), metadata=metadata or {})
@@ -37,6 +39,8 @@ def record_attendance(lesson, entries, actor):
 
 @transaction.atomic
 def register_payment(student, amount, method, actor, reference="", receipt=None, notes=""):
+    if reference and TuitionPayment.objects.filter(reference=reference).exists():
+        raise ValueError("A payment with this reference already exists")
     status = TuitionPayment.Status.APPROVED if method == TuitionPayment.Method.CASH else TuitionPayment.Status.PENDING
     payment = TuitionPayment.objects.create(student=student, amount=amount, method=method, status=status, received_by=actor, reference=reference, receipt=receipt, notes=notes)
     if status == TuitionPayment.Status.APPROVED:
@@ -117,7 +121,9 @@ def pay_salary(period, amount, actor, reference=""):
 def award_coins(student, amount, actor, reason, reference=""):
     if amount <= 0:
         raise ValueError("Coin award must be positive")
-    row = CoinTransaction.objects.create(student=student, amount=amount, created_by=actor, reason=reason, reference=reference)
+    if reference and CoinTransaction.objects.filter(reference=reference).exists():
+        raise ValueError("A coin award with this reference already exists")
+    row =CoinTransaction.objects.create(student=student, amount=amount, created_by=actor, reason=reason, reference=reference)
     audit(actor, "coins.awarded", row, {"amount": amount})
     return row
 
@@ -127,6 +133,8 @@ def coin_balance(student):
 @transaction.atomic
 def purchase_product(student, product_id, quantity=1):
     product = ShopProduct.objects.select_for_update().get(pk=product_id, active=True)
+    # Lock the student row so two concurrent purchases cannot both pass the balance check.
+    User.objects.select_for_update().get(pk=student.pk)
     if quantity < 1 or product.stock < quantity:
         raise ValueError("Product is unavailable in the requested quantity")
     cost = product.coin_price * quantity
@@ -155,3 +163,25 @@ def submit_quiz(quiz, student, answers):
     attempt.passed, attempt.submitted_at = attempt.score_percent >= quiz.pass_percent, timezone.now()
     attempt.save(update_fields=["score_percent", "passed", "submitted_at"])
     return attempt
+
+MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+GITHUB_REPO_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$")
+
+def validate_submission(assignment, text, github_url, image):
+    """Return field errors for a student submission; empty dict means valid."""
+    types = set(assignment.submission_types)
+    errors = {}
+    if "text" in types:
+        if not text.strip(): errors["text"] = "Matn talab qilinadi."
+    elif text.strip(): errors["text"] = "Bu vazifa uchun matn talab qilinmaydi."
+    if "github_link" in types:
+        if not GITHUB_REPO_URL.match(github_url): errors["github_url"] = "To'g'ri GitHub havolasini kiriting (https://github.com/user/repo)."
+    elif github_url: errors["github_url"] = "Bu vazifa uchun GitHub havolasi talab qilinmaydi."
+    if image is not None:
+        if "image" not in types: errors["image"] = "Bu vazifa uchun rasm talab qilinmaydi."
+        elif os.path.splitext(image.name)[1].lower() not in IMAGE_EXTENSIONS: errors["image"] = "Faqat JPG, PNG yoki WEBP rasm yuklang."
+        elif image.size > MAX_UPLOAD_BYTES: errors["image"] = "Fayl hajmi 100 MB dan oshmasligi kerak."
+    elif "image" in types: errors["image"] = "Rasm talab qilinadi."
+    return errors
+
