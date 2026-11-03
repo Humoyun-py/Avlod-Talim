@@ -1,3 +1,4 @@
+import os
 import re
 from django.contrib.auth.password_validation import validate_password
 from django.db import transaction
@@ -198,11 +199,33 @@ class QuizSerializer(serializers.ModelSerializer):
         model = Quiz
         fields = "__all__"
 
+class SubmissionImageSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    class Meta:
+        model = SubmissionImage
+        fields = ["id", "url"]
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_url(self, obj):
+        return f"/api/v1/submissions/{obj.submission_id}/images/{obj.pk}/"
+
 class AssignmentSubmissionSerializer(serializers.ModelSerializer):
+    student_name = serializers.SerializerMethodField()
+    images = SubmissionImageSerializer(many=True, read_only=True)
+    file_url = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField()
     class Meta:
         model = AssignmentSubmission
-        fields = ["id", "assignment", "student", "text", "github_url", "image", "submitted_at", "score", "feedback", "reviewed_by"]
+        fields = ["id", "assignment", "student", "student_name", "text", "link_url", "images", "file_url", "file_name", "submitted_at", "score", "feedback", "reviewed_by"]
         read_only_fields = ["student", "submitted_at", "score", "feedback", "reviewed_by"]
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_student_name(self, obj):
+        return obj.student.get_full_name() or obj.student.username
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_file_url(self, obj):
+        return f"/api/v1/submissions/{obj.pk}/file/" if obj.file else None
+    @extend_schema_field(OpenApiTypes.STR)
+    def get_file_name(self, obj):
+        return os.path.basename(obj.file.name) if obj.file else ""
 
 class SimplePayloadSerializer(serializers.Serializer):
     detail = serializers.CharField(required=False)

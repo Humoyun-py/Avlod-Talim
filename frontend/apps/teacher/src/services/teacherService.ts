@@ -36,6 +36,13 @@ const paged = async <T,>(url: string): Promise<T[]> => {
 };
 const mapGroup = (g: any): Group => ({ id: String(g.id), name: g.name, course_name: g.course_name || '', level: '', student_count: g.enrollments?.length || 0, days: [], start_time: '', end_time: '', room: '', status: g.active ? 'active' : 'paused', start_date: g.start_date, end_date: g.end_date || '' });
 const mapStudent = (s: any, group?: any): Student => ({ id: String(s.id), student_code: s.student_id || '', full_name: s.full_name || `${s.first_name} ${s.last_name}`.trim(), group_id: String(group?.id || ''), group_name: group?.name || '', course_name: group?.course_name || '', phone: s.phone || '', enrollment_status: s.is_active ? 'active' : 'graduated', attendance_rate: 0, total_lessons: 0, attended_lessons: 0, missed_lessons: 0, late_lessons: 0, coins_balance: 0 });
+const mapSubmission = (s: any): HomeworkSubmission => ({
+  id: String(s.id), homework_id: String(s.assignment), student_id: String(s.student), student_name: s.student_name || '', student_code: '',
+  submitted_at: s.submitted_at, text: s.text || '', link_url: s.link_url || '',
+  images: (s.images || []).map((image: any) => ({ id: String(image.id), url: image.url })),
+  file_url: s.file_url || undefined, file_name: s.file_name || undefined,
+  status: s.score == null ? 'submitted' : 'reviewed', score: s.score ?? undefined, feedback: s.feedback || undefined,
+});
 const mapLesson = (l: any): Lesson => ({ id: String(l.id), group_id: String(l.group), group_name: l.group_name || '', course_name: l.course_name || '', date: l.scheduled_date || '', start_time: '', end_time: '', room: '', status: l.status === 'cancelled' ? 'cancelled' : l.status === 'completed' ? 'completed' : l.status === 'in_progress' ? 'in_progress' : 'planned', topic: l.title, topic_id: l.topic_id, attendance_submitted: false });
 
 export const MAX_COIN_REWARD_LIMIT = 50;
@@ -568,7 +575,7 @@ export const teacherService = {
   // 8. Homework Management
   async getHomework(groupId?: string): Promise<Homework[]> {
     const rows = await paged<any>('/assignments/');
-    return rows.filter(a => !groupId || String(a.lesson_data?.group) === String(groupId)).map(a => ({ id: String(a.id), group_id: String(a.lesson_data?.group || ''), group_name: a.lesson_data?.group_name || '', course_name: '', title: a.title, description: a.description, deadline: a.due_at || '', total_students: 0, submissions_count: 0, reviewed_count: 0, created_at: a.created_at }));
+    return rows.filter(a => !groupId || String(a.lesson_data?.group) === String(groupId)).map(a => ({ id: String(a.id), group_id: String(a.lesson_data?.group || ''), group_name: a.lesson_data?.group_name || '', course_name: '', title: a.title, description: a.description, deadline: a.due_at || '', submission_types: a.submission_types || ['text'], total_students: 0, submissions_count: 0, reviewed_count: 0, created_at: a.created_at }));
   },
 
   async createHomework(data: {
@@ -576,29 +583,22 @@ export const teacherService = {
     title: string;
     description: string;
     deadline: string;
-    attachments?: { name: string; url: string; size: string }[];
+    submission_types: string[];
   }): Promise<Homework> {
     const lessons = (await paged<any>('/lessons/')).filter(l => String(l.group) === data.group_id);
     const lesson = lessons[0]; if (!lesson) throw new Error('Create or select a lesson before adding an assignment.');
-    const { data: assignment } = await apiClient.post('/assignments/', { lesson: lesson.id, title: data.title, description: data.description, due_at: data.deadline || null });
-    return { id: String(assignment.id), group_id: data.group_id, group_name: '', course_name: '', title: assignment.title, description: assignment.description, deadline: assignment.due_at || '', total_students: 0, submissions_count: 0, reviewed_count: 0, created_at: assignment.created_at };
+    const { data: assignment } = await apiClient.post('/assignments/', { lesson: lesson.id, title: data.title, description: data.description, due_at: data.deadline || null, submission_types: data.submission_types });
+    return { id: String(assignment.id), group_id: data.group_id, group_name: '', course_name: '', title: assignment.title, description: assignment.description, deadline: assignment.due_at || '', submission_types: assignment.submission_types, total_students: 0, submissions_count: 0, reviewed_count: 0, created_at: assignment.created_at };
   },
 
   async getSubmissions(homeworkId: string): Promise<HomeworkSubmission[]> {
-    return (await paged<any>(`/submissions/?assignment=${homeworkId}`)).map(s => ({ id: String(s.id), homework_id: String(s.assignment), student_id: String(s.student), student_name: '', student_code: '', submitted_at: s.submitted_at, code_content: s.text, status: s.score == null ? 'submitted' : 'reviewed', score: s.score, feedback: s.feedback }));
+    return (await paged<any>(`/submissions/?assignment=${homeworkId}`)).map(mapSubmission);
   },
 
-  async submitHomework(data: {
-    homework_id: string;
-    student_id: string;
-    file_name: string;
-    code_content: string;
-    code_language?: string;
-    file_size?: string;
-    comment?: string;
-  }): Promise<HomeworkSubmission> {
-    const { data: submission } = await apiClient.post('/submissions/', { assignment: Number(data.homework_id), text: data.code_content || data.comment || '' });
-    return { id: String(submission.id), homework_id: String(submission.assignment), student_id: String(submission.student), student_name: '', student_code: '', submitted_at: submission.submitted_at, code_content: submission.text, status: submission.score == null ? 'submitted' : 'reviewed' };
+  /** Protected attachments (images, project files) are fetched with the auth token and returned as a Blob. */
+  async fetchAttachment(url: string): Promise<Blob> {
+    const { data } = await apiClient.get(url.replace(/^\/api\/v1/, ''), { responseType: 'blob' });
+    return data;
   },
 
   async reviewSubmission(
@@ -608,7 +608,7 @@ export const teacherService = {
     coins?: number
   ): Promise<HomeworkSubmission> {
     const { data } = await apiClient.patch(`/submissions/${submissionId}/`, { score, feedback });
-    return { id: String(data.id), homework_id: String(data.assignment), student_id: String(data.student), student_name: '', student_code: '', submitted_at: data.submitted_at, code_content: data.text, status: 'reviewed', score: data.score, feedback: data.feedback };
+    return mapSubmission(data);
   },
 
   // 9. Notifications

@@ -1,7 +1,8 @@
 import os
-import re
 from decimal import Decimal, ROUND_HALF_UP
 from django.conf import settings
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import URLValidator
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
@@ -165,23 +166,34 @@ def submit_quiz(quiz, student, answers):
     return attempt
 
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+MAX_SUBMISSION_IMAGES = 10
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-GITHUB_REPO_URL = re.compile(r"^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$")
+PROJECT_FILE_EXTENSIONS = {
+    ".zip", ".rar", ".7z", ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+    ".csv", ".txt", ".md", ".py", ".ipynb", ".java", ".c", ".cpp", ".js", ".ts", ".html", ".css", ".sql",
+}
+LINK_VALIDATOR = URLValidator(schemes=["http", "https"])
 
-def validate_submission(assignment, text, github_url, image):
+def validate_submission(assignment, text, link, images, project_file):
     """Return field errors for a student submission; empty dict means valid."""
     types = set(assignment.submission_types)
     errors = {}
     if "text" in types:
         if not text.strip(): errors["text"] = "Matn talab qilinadi."
     elif text.strip(): errors["text"] = "Bu vazifa uchun matn talab qilinmaydi."
-    if "github_link" in types:
-        if not GITHUB_REPO_URL.match(github_url): errors["github_url"] = "To'g'ri GitHub havolasini kiriting (https://github.com/user/repo)."
-    elif github_url: errors["github_url"] = "Bu vazifa uchun GitHub havolasi talab qilinmaydi."
-    if image is not None:
-        if "image" not in types: errors["image"] = "Bu vazifa uchun rasm talab qilinmaydi."
-        elif os.path.splitext(image.name)[1].lower() not in IMAGE_EXTENSIONS: errors["image"] = "Faqat JPG, PNG yoki WEBP rasm yuklang."
-        elif image.size > MAX_UPLOAD_BYTES: errors["image"] = "Fayl hajmi 100 MB dan oshmasligi kerak."
-    elif "image" in types: errors["image"] = "Rasm talab qilinadi."
+    if "link" in types:
+        try: LINK_VALIDATOR(link)
+        except DjangoValidationError: errors["link"] = "To'g'ri loyiha havolasini kiriting (https://...)."
+    elif link: errors["link"] = "Bu vazifa uchun loyiha havolasi talab qilinmaydi."
+    if "image" in types:
+        if not images: errors["images"] = "Kamida 1 ta rasm yuklang."
+        elif len(images) > MAX_SUBMISSION_IMAGES: errors["images"] = f"Ko'pi bilan {MAX_SUBMISSION_IMAGES} ta rasm yuklash mumkin."
+        elif any(os.path.splitext(image.name)[1].lower() not in IMAGE_EXTENSIONS for image in images): errors["images"] = "Faqat JPG, PNG yoki WEBP rasm yuklang."
+        elif any(image.size > MAX_UPLOAD_BYTES for image in images): errors["images"] = "Har bir rasm hajmi 100 MB dan oshmasligi kerak."
+    elif images: errors["images"] = "Bu vazifa uchun rasm talab qilinmaydi."
+    if "file" in types:
+        if project_file is None: errors["file"] = "Loyiha faylini yuklang."
+        elif os.path.splitext(project_file.name)[1].lower() not in PROJECT_FILE_EXTENSIONS: errors["file"] = "Bu fayl turi qo'llab-quvvatlanmaydi."
+        elif project_file.size > MAX_UPLOAD_BYTES: errors["file"] = "Fayl hajmi 100 MB dan oshmasligi kerak."
+    elif project_file is not None: errors["file"] = "Bu vazifa uchun loyiha fayli talab qilinmaydi."
     return errors
-

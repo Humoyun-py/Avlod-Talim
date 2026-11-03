@@ -1,3 +1,4 @@
+import tempfile
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -806,19 +807,21 @@ class ProfileUpdateTest(TestCase):
         self.assertEqual(self.user.role, "teacher")
         self.assertTrue(self.user.is_active)
 
+@override_settings(MEDIA_ROOT=tempfile.mkdtemp())
 class SubmissionTypesTest(TestCase):
     def setUp(self):
         from django.core.files.uploadedfile import SimpleUploadedFile
         self.SimpleUploadedFile = SimpleUploadedFile
         self.teacher = User.objects.create_user(username="teacher", password="TeacherPass123!", role="teacher")
         self.student = User.objects.create_user(username="student-12345678", password="StudPass123!", role="student", student_id="12345678")
+        self.other_student = User.objects.create_user(username="student-87654321", password="OtherPass123!", role="student", student_id="87654321")
         course = Course.objects.create(name="Design", duration_months=2, monthly_fee=Decimal("100000"))
         group = TeachingGroup.objects.create(name="D1", course=course, teacher=self.teacher)
         GroupEnrollment.objects.create(student=self.student, group=group, monthly_fee=Decimal("100000"))
-        lesson = Lesson.objects.create(course=course, group=group, number=1, title="Draw", teacher=self.teacher, status="completed")
+        GroupEnrollment.objects.create(student=self.other_student, group=group, monthly_fee=Decimal("100000"))
+        self.lesson = Lesson.objects.create(course=course, group=group, number=1, title="Draw", teacher=self.teacher, status="completed")
         self.client = APIClient()
         self.client.force_authenticate(self.student)
-        self.lesson = lesson
 
     def make_assignment(self, types):
         return Assignment.objects.create(lesson=self.lesson, title="HW", created_by=self.teacher, submission_types=types)
@@ -826,48 +829,113 @@ class SubmissionTypesTest(TestCase):
     def image(self, name="work.png", size=1024):
         return self.SimpleUploadedFile(name, b"\x89PNG" + b"0" * size, content_type="image/png")
 
-    def test_text_and_image_assignment_requires_both(self):
+    def project(self, name="project.zip", size=1024):
+        return self.SimpleUploadedFile(name, b"PK" + b"0" * size, content_type="application/zip")
+
+    def test_text_and_images_requires_both(self):
         assignment = self.make_assignment(["text", "image"])
         response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine"}, format="multipart")
         self.assertEqual(response.status_code, 400)
-        self.assertIn("image", response.data)
-        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "image": self.image()}, format="multipart")
+        self.assertIn("images", response.data)
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "images": [self.image()]}, format="multipart")
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(response.data["image"])
+        self.assertEqual(len(response.data["images"]), 1)
 
-    def test_programming_assignment_requires_valid_github_link(self):
-        assignment = self.make_assignment(["text", "github_link"])
-        for bad in ["", "not a url", "https://example.com/x/y", "https://github.com/onlyuser"]:
-            with self.subTest(url=bad):
-                response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Notes", "github_url": bad}, format="json")
-                self.assertEqual(response.status_code, 400)
-                self.assertIn("github_url", response.data)
-        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Notes", "github_url": "https://github.com/student/project"}, format="json")
-        self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["github_url"], "https://github.com/student/project")
-
-    def test_disallowed_types_are_rejected(self):
-        assignment = self.make_assignment(["text"])
-        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "github_url": "https://github.com/a/b"}, format="json")
+    def test_accepts_up_to_ten_images_and_rejects_eleven(self):
+        assignment = self.make_assignment(["image"])
+        eleven = [self.image(f"w{i}.png") for i in range(11)]
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": eleven}, format="multipart")
         self.assertEqual(response.status_code, 400)
-        self.assertIn("github_url", response.data)
+        self.assertIn("images", response.data)
+        ten = [self.image(f"w{i}.png") for i in range(10)]
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": ten}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(len(response.data["images"]), 10)
+
+    def test_resubmission_replaces_images(self):
+        assignment = self.make_assignment(["image"])
+        self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": [self.image("a.png"), self.image("b.png")]}, format="multipart")
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": [self.image("c.png")]}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["images"]), 1)
 
     def test_image_type_and_size_limits(self):
         assignment = self.make_assignment(["image"])
-        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "image": self.SimpleUploadedFile("x.exe", b"MZ", content_type="application/octet-stream")}, format="multipart")
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": [self.SimpleUploadedFile("x.exe", b"MZ", content_type="application/octet-stream")]}, format="multipart")
         self.assertEqual(response.status_code, 400)
-        self.assertIn("image", response.data)
+        self.assertIn("images", response.data)
         with patch("core.services.MAX_UPLOAD_BYTES", 100):
-            response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "image": self.image(size=500)}, format="multipart")
+            response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": [self.image(size=500)]}, format="multipart")
         self.assertEqual(response.status_code, 400)
-        self.assertIn("image", response.data)
+        self.assertIn("images", response.data)
+
+    def test_link_accepts_any_project_url_and_rejects_non_urls(self):
+        assignment = self.make_assignment(["link"])
+        for bad in ["", "not a url", "ftp://example.com/x", "javascript:alert(1)"]:
+            with self.subTest(url=bad):
+                response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "link_url": bad}, format="json")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("link", response.data)
+        for good in ["https://example.com/project", "https://github.com/student/project", "https://docs.google.com/document/d/abc"]:
+            with self.subTest(url=good):
+                self.student_submission_cleanup()
+                response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "link_url": good}, format="json")
+                self.assertEqual(response.status_code, 201)
+                self.assertEqual(response.data["link_url"], good)
+
+    def student_submission_cleanup(self):
+        AssignmentSubmission.objects.filter(student=self.student).delete()
+
+    def test_project_file_type_size_and_download(self):
+        assignment = self.make_assignment(["file"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "file": self.SimpleUploadedFile("x.exe", b"MZ")}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("file", response.data)
+        with patch("core.services.MAX_UPLOAD_BYTES", 100):
+            response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "file": self.project(size=500)}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "file": self.project()}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data["file_name"].endswith(".zip"))
+        download = self.client.get(response.data["file_url"])
+        self.assertEqual(download.status_code, 200)
+        self.assertIn("attachment", download["Content-Disposition"])
+
+    def test_disallowed_types_are_rejected(self):
+        assignment = self.make_assignment(["text"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "text": "Mine", "link_url": "https://example.com/a", "images": [self.image()]}, format="multipart")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("link", response.data)
+        self.assertIn("images", response.data)
+
+    def test_only_owner_and_lesson_teacher_can_open_attachments(self):
+        assignment = self.make_assignment(["image", "file"])
+        response = self.client.post("/api/v1/submissions/", {"assignment": assignment.pk, "images": [self.image()], "file": self.project()}, format="multipart")
+        self.assertEqual(response.status_code, 201)
+        image_url = response.data["images"][0]["url"]
+        self.assertEqual(self.client.get(image_url).status_code, 200)
+        self.client.force_authenticate(self.other_student)
+        self.assertEqual(self.client.get(image_url).status_code, 404)
+        self.assertEqual(self.client.get(response.data["file_url"]).status_code, 404)
+        self.client.force_authenticate(self.teacher)
+        self.assertEqual(self.client.get(image_url).status_code, 200)
+        self.assertEqual(self.client.get(response.data["file_url"]).status_code, 200)
+
+    def test_teacher_submissions_can_be_filtered_by_assignment(self):
+        first = self.make_assignment(["text"])
+        second = self.make_assignment(["text"])
+        AssignmentSubmission.objects.create(assignment=first, student=self.student, text="A")
+        AssignmentSubmission.objects.create(assignment=second, student=self.student, text="B")
+        self.client.force_authenticate(self.teacher)
+        response = self.client.get(f"/api/v1/submissions/?assignment={first.pk}")
+        self.assertEqual([row["assignment"] for row in response.data["results"]], [first.pk])
 
     def test_teacher_can_set_submission_types_and_rejects_unknown_type(self):
         self.client.force_authenticate(self.teacher)
-        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Poster", "submission_types": ["image", "text"]}, format="json")
+        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Poster", "submission_types": ["image", "text", "link", "file"]}, format="json")
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data["submission_types"], ["image", "text"])
-        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Bad", "submission_types": ["video"]}, format="json")
+        self.assertEqual(response.data["submission_types"], ["image", "text", "link", "file"])
+        response = self.client.post("/api/v1/assignments/", {"lesson": self.lesson.pk, "title": "Bad", "submission_types": ["github_link"]}, format="json")
         self.assertEqual(response.status_code, 400)
 
 class AuthorizationAndIntegrityRegressionTest(TestCase):

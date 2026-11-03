@@ -253,9 +253,10 @@ def default_submission_types():
 
 class Assignment(models.Model):
     class SubmissionType(models.TextChoices):
-        TEXT = "text", "Text"
-        IMAGE = "image", "Image"
-        GITHUB_LINK = "github_link", "GitHub link"
+        TEXT = "text", "Matn"
+        IMAGE = "image", "Rasmlar"
+        LINK = "link", "Loyiha havolasi"
+        FILE = "file", "Loyiha fayli"
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="assignments")
     title = models.CharField(max_length=180)
     description = models.TextField(blank=True)
@@ -269,14 +270,20 @@ class AssignmentSubmission(models.Model):
     student = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="assignment_submissions")
     text = models.TextField(blank=True)
     file = models.FileField(upload_to="submissions/", null=True, blank=True)
-    image = models.ImageField(upload_to="submissions/images/", null=True, blank=True)
-    github_url = models.URLField(blank=True)
+    link_url = models.URLField(max_length=500, blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
     score = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     feedback = models.TextField(blank=True)
     reviewed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="submissions_reviewed")
     class Meta:
         constraints = [models.UniqueConstraint(fields=["assignment", "student"], name="uniq_assignment_submission")]
+
+class SubmissionImage(models.Model):
+    submission = models.ForeignKey(AssignmentSubmission, on_delete=models.CASCADE, related_name="images")
+    image = models.ImageField(upload_to="submissions/images/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        ordering = ["id"]
 
 class Quiz(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="quizzes")

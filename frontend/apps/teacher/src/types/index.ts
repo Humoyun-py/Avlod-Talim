@@ -127,8 +127,7 @@ export interface Homework {
   title: string;
   description: string;
   deadline: string;
-  requires_code?: boolean;
-  allowed_file_types?: string[];
+  submission_types?: string[];
   attachments?: { name: string; url: string; size: string }[];
   total_students: number;
   submissions_count: number;
@@ -143,6 +142,9 @@ export interface HomeworkSubmission {
   student_name: string;
   student_code: string;
   submitted_at: string;
+  text?: string;
+  link_url?: string;
+  images?: { id: string; url: string }[];
   file_name?: string;
   file_size?: string;
   file_url?: string;

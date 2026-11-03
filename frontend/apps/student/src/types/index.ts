@@ -219,14 +219,20 @@ export interface LessonSchedule {
 
 export type HomeworkStatus = 'Pending' | 'Submitted' | 'Graded' | 'Overdue';
 
-export type SubmissionType = 'text' | 'image' | 'github_link';
+export type SubmissionType = 'text' | 'image' | 'link' | 'file';
+
+export interface SubmissionImage {
+  id: string;
+  url: string;
+}
 
 export interface HomeworkSubmission {
   submittedAt: string;
   textContent: string;
-  githubUrl?: string;
-  imageUrl?: string;
-  previewUrl?: string;
+  linkUrl?: string;
+  images: SubmissionImage[];
+  fileUrl?: string;
+  fileName?: string;
   grade?: number;
   teacherFeedback?: string;
   gradedAt?: string;

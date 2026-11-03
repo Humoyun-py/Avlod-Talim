@@ -12,6 +12,7 @@ import {
   AttendanceRecord,
   LessonSchedule,
   Homework,
+  HomeworkSubmission,
   Announcement,
   StudentNotification,
   Student,
@@ -21,6 +22,17 @@ import {
   Course
 } from '../types';
 import { ApiClient } from './apiClient';
+
+const toHomeworkSubmission = (s: any): HomeworkSubmission => ({
+  submittedAt: s.submitted_at,
+  textContent: s.text,
+  linkUrl: s.link_url || undefined,
+  images: (s.images || []).map((image: any) => ({ id: String(image.id), url: image.url })),
+  fileUrl: s.file_url || undefined,
+  fileName: s.file_name || undefined,
+  grade: s.score ?? undefined,
+  teacherFeedback: s.feedback || undefined,
+});
 
 export const StudentApiService = {
   // -------------------------------------------------------------
@@ -184,24 +196,30 @@ export const StudentApiService = {
         return {
           id: String(a.id), title: a.title, description: a.description, groupId, groupName: '', courseName: '', teacherName: '',
           assignedDate: a.created_at, deadline: a.due_at || '', maxScore: 100,
-          status: s ? 'Submitted' : 'Pending',
+          status: !s ? 'Pending' : s.score != null ? 'Graded' : 'Submitted',
           submissionTypes: a.submission_types || ['text'],
-          submission: s ? { submittedAt: s.submitted_at, textContent: s.text, githubUrl: s.github_url || undefined, imageUrl: s.image || undefined } : undefined,
+          submission: s ? toHomeworkSubmission(s) : undefined,
         } as Homework;
       });
   },
 
   async submitHomework(
     homeworkId: string,
-    submission: { textContent: string; githubUrl?: string; image?: File | null }
-  ): Promise<Homework> {
+    submission: { textContent: string; linkUrl?: string; images: File[]; file?: File | null }
+  ): Promise<HomeworkSubmission> {
     const form = new FormData();
     form.append('assignment', homeworkId);
     form.append('text', submission.textContent);
-    if (submission.githubUrl) form.append('github_url', submission.githubUrl);
-    if (submission.image) form.append('image', submission.image);
+    if (submission.linkUrl) form.append('link_url', submission.linkUrl);
+    submission.images.forEach(image => form.append('images', image));
+    if (submission.file) form.append('file', submission.file);
     const { data } = await ApiClient.request<any>('/submissions/', { method: 'POST', body: form });
-    return { id: String(data.assignment), title: '', description: '', groupId: '', groupName: '', courseName: '', teacherName: '', assignedDate: '', deadline: '', maxScore: 100, status: 'Submitted', submission: { submittedAt: data.submitted_at, textContent: data.text, githubUrl: data.github_url || undefined, imageUrl: data.image || undefined } };
+    return toHomeworkSubmission(data);
+  },
+
+  /** Protected attachments (images, project files) are fetched with the auth token and opened as blobs. */
+  async fetchAttachment(url: string): Promise<Blob> {
+    return ApiClient.fetchBlob(url.replace(/^\/api\/v1/, ''));
   },
 
   // -------------------------------------------------------------

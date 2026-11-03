@@ -1,6 +1,8 @@
+import os
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from django.contrib.auth import authenticate
+from django.http import FileResponse
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import router, transaction
 from django.db.models.deletion import Collector
@@ -9,7 +11,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets, filters
 from rest_framework.decorators import action, api_view, permission_classes
-from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -783,6 +785,7 @@ class SubmissionViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
     permission_classes = [RolePermission]
     roles = ("director", "admin", "teacher", "student")
+    filterset_fields = ["assignment"]
     def get_queryset(self):
         if getattr(self, "swagger_fake_view", False): return AssignmentSubmission.objects.none()
         qs = AssignmentSubmission.objects.select_related("assignment__lesson__group", "student", "reviewed_by").order_by("-submitted_at", "id")
@@ -797,15 +800,30 @@ class SubmissionViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("Assignment is not available to this student")
         if assignment.due_at and assignment.due_at < timezone.now(): raise ValidationError({"detail": "Assignment deadline has passed"})
         text = request.data.get("text") or ""
-        github_url = (request.data.get("github_url") or "").strip()
-        image = request.FILES.get("image")
-        errors = validate_submission(assignment, text, github_url, image)
+        link = (request.data.get("link_url") or "").strip()
+        images = request.FILES.getlist("images")
+        project_file = request.FILES.get("file")
+        errors = validate_submission(assignment, text, link, images, project_file)
         if errors: raise ValidationError(errors)
         if AssignmentSubmission.objects.filter(assignment=assignment, student=request.user, score__isnull=False).exists():
             raise ValidationError({"detail": "This submission has already been graded and can no longer be changed."})
-        submission, created = AssignmentSubmission.objects.update_or_create(assignment=assignment, student=request.user,
-            defaults={"text": text, "github_url": github_url, "image": image})
+        with transaction.atomic():
+            submission, created = AssignmentSubmission.objects.update_or_create(assignment=assignment, student=request.user,
+                defaults={"text": text, "link_url": link, "file": project_file})
+            submission.images.all().delete()
+            for image in images:
+                SubmissionImage.objects.create(submission=submission, image=image)
         return Response(AssignmentSubmissionSerializer(submission).data, status=201 if created else 200)
+    @action(detail=True, methods=["get"], url_path="file")
+    def project_file(self, request, pk=None):
+        submission = self.get_object()
+        if not submission.file: raise NotFound("This submission has no project file.")
+        return FileResponse(submission.file.open("rb"), as_attachment=True, filename=os.path.basename(submission.file.name))
+    @action(detail=True, methods=["get"], url_path=r"images/(?P<image_id>[0-9]+)")
+    def image(self, request, pk=None, image_id=None):
+        submission = self.get_object()
+        image = get_object_or_404(submission.images, pk=image_id)
+        return FileResponse(image.image.open("rb"))
     def partial_update(self, request, *args, **kwargs):
         submission = self.get_object()
         if request.user.role not in ("director", "teacher") or (request.user.role == "teacher" and submission.assignment.lesson.teacher_id != request.user.pk):

@@ -1072,8 +1072,8 @@ export const INITIAL_HOMEWORK = [
     submission: {
       submittedAt: '2026-10-14 21:30',
       textContent: 'Vazifa to‘liq bajarildi. GitHub omboriga yuklandi, responsive dizayn va debounce qidiruv qo‘shildi.',
-      githubUrl: 'https://github.com/student/avlod-dashboard-task',
-      previewUrl: 'https://avlod-demo-preview.vercel.app',
+      linkUrl: 'https://github.com/student/avlod-dashboard-task',
+      images: [],
       grade: 95,
       teacherFeedback: 'Ajoyib natija, Azizbek! Kod arxitekturasi juda toza, Clean Code tamoyillariga to‘liq rioya qilingan. +30 coin berildi.',
       gradedAt: '2026-10-15 11:20'
@@ -1095,7 +1095,8 @@ export const INITIAL_HOMEWORK = [
     submission: {
       submittedAt: '2026-10-10 16:45',
       textContent: 'TypeScript mashqlari to‘liq yechildi.',
-      githubUrl: 'https://github.com/student/ts-generics-lab',
+      linkUrl: 'https://github.com/student/ts-generics-lab',
+      images: [],
       grade: 90,
       teacherFeedback: 'Yaxshi ish, ayniqsa Record va Pick tiplarining kombinatsiyasi to‘g‘ri qo‘llanilgan.',
       gradedAt: '2026-10-11 20:00'

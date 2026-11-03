@@ -52,6 +52,28 @@ export class ApiClient {
     }
   }
 
+  /** Fetches a protected file (submission attachment) as a Blob, refreshing the access token once if needed. */
+  public static async fetchBlob(endpoint: string): Promise<Blob> {
+    const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    const send = (token: string | null) =>
+      fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+
+    let response = await send(this.getAccessToken());
+    if (response.status === 401) {
+      const refresh = localStorage.getItem(REFRESH_TOKEN_KEY);
+      if (refresh) {
+        const refreshed = await fetch(`${this.baseUrl}/auth/token/refresh/`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refresh }) });
+        if (refreshed.ok) {
+          const tokens = await refreshed.json();
+          this.setTokens(tokens.access, tokens.refresh || refresh);
+          response = await send(tokens.access);
+        } else this.clearTokens();
+      }
+    }
+    if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+    return response.blob();
+  }
+
   public static async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -90,7 +112,7 @@ export class ApiClient {
         let errorMsg = `HTTP Error ${response.status}`;
         try {
           const errorJson = await response.json();
-          errorMsg = errorJson.detail || errorJson.message || errorMsg;
+          errorMsg = errorJson.detail || errorJson.message || Object.values(errorJson).flat().join(' ') || errorMsg;
         } catch {
           // ignore
         }
